@@ -39,3 +39,6 @@ Phase 1: MVP | Phase 2: Core Features | Phase 3: Advanced | Phase 4: Polish & De
 
 11. Success Metrics
 FitScore accuracy ±5, parsing >95%, precision@10 >80%, load time <2s
+
+12. Elevator Pitch
+FitScore quantifies candidate-job fit using AI-driven resume analysis, scoring, and analytics
