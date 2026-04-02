@@ -42,3 +42,33 @@ FitScore accuracy ±5, parsing >95%, precision@10 >80%, load time <2s
 
 12. Elevator Pitch
 FitScore quantifies candidate-job fit using AI-driven resume analysis, scoring, and analytics
+
+
+
+
+
+
+FitScore Initial Implementation Walkthrough
+What was built
+FastAPI Core: A lightweight Python REST API (
+main.py
+) serving static assets and providing mocked JSON endpoints for jobs and telemetry.
+AntiGravity UI System: A rich Vanilla CSS3 aesthetic featuring:
+Deep dark background mapping (--bg-base).
+Pulsing animated background gradients (the .bg-gradient-orb overlays).
+Floating glass-panel layers providing layout structure with heavy blur effects.
+Smooth hover states with glowing drop shadows.
+Automation Hub: Successfully integrated 
+Drawflow
+ via CDN into the DOM without React compilation. Supports dropping components from the palette to the screen, complete with dark mode overrides for the nodes and glowing connection paths.
+Dashboards: Mock Candidate dashboard setup using Chart.js for "Your Skills vs Market Demand" radar charts and custom SVG donut charts for the overall FitScore.
+Manual Verification
+Access the deployment at http://127.0.0.1:8000.
+Verify the glowing SVG background and depth of the floating center app-container.
+Use the sidebar to seamlessly switch between the Dashboard, Jobs (simulating an API call), and the Automation Hub.
+In the Automation Hub, try dragging a "Job Scraper" node from the left palette into the center Canvas area.
+TIP
+
+Use this initial prototype as the visual baseline. You can easily modify colors in 
+public/css/style.css
+ since they are centralized in :root CSS variables.
