@@ -1,6 +1,8 @@
 # FitScore
 FitScore is an AI- Powered recruitment intelligence platform that quantifies how well a candidate fits a job using data-driven scoring , resume analysis, and analytics.
 
+
+Live Link: https://salmon-forest-0355c5300.2.azurestaticapps.net/
 1. Product Vision
 FitScore is an AI-powered recruitment intelligence platform that quantifies how well a candidate
 fits a job using data-driven scoring, resume analysis, and analytics dashboards.
