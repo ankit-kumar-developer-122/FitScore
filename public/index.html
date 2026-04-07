@@ -1,0 +1,330 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>FitScore — AI Recruitment Intelligence</title>
+    <meta name="description" content="AI-powered recruitment intelligence and resume analysis platform">
+    <link rel="stylesheet" href="/css/style.css">
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&display=swap" rel="stylesheet">
+    <script src="https://unpkg.com/@phosphor-icons/web"></script>
+    <link rel="stylesheet" href="https://cdn.jsdelivr.net/gh/jerosoler/Drawflow/dist/drawflow.min.css">
+    <script src="https://cdn.jsdelivr.net/gh/jerosoler/Drawflow/dist/drawflow.min.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+</head>
+<body class="dark">
+    <div class="bg-orb o1"></div>
+    <div class="bg-orb o2"></div>
+    <div class="bg-orb o3"></div>
+
+    <div class="app-shell">
+        <!-- ── Sidebar ──────────────────────────────────────── -->
+        <nav class="sidebar" id="sidebar">
+            <div class="sidebar-brand">
+                <div class="logo-mark"><i class="ph ph-lightning"></i></div>
+                <span>FitScore</span>
+            </div>
+
+            <div class="nav-section-title">Main</div>
+            <ul class="nav-list">
+                <li class="nav-item active" data-page="dashboard"><i class="ph ph-squares-four"></i><span class="nav-label">Dashboard</span></li>
+                <li class="nav-item" data-page="jobs"><i class="ph ph-briefcase"></i><span class="nav-label">Job Feed</span></li>
+                <li class="nav-item" data-page="resume"><i class="ph ph-file-text"></i><span class="nav-label">Resume Lab</span></li>
+                <li class="nav-item" data-page="automation"><i class="ph ph-git-merge"></i><span class="nav-label">Automation</span></li>
+            </ul>
+
+            <div class="nav-section-title">Insights</div>
+            <ul class="nav-list">
+                <li class="nav-item" data-page="analytics"><i class="ph ph-chart-line-up"></i><span class="nav-label">Analytics</span></li>
+                <li class="nav-item" data-page="recruiter"><i class="ph ph-users-three"></i><span class="nav-label">Recruiter</span></li>
+                <li class="nav-item" data-page="database"><i class="ph ph-database"></i><span class="nav-label">Database</span></li>
+                <li class="nav-item" data-page="settings"><i class="ph ph-gear"></i><span class="nav-label">Settings</span></li>
+            </ul>
+
+            <div class="sidebar-footer">
+                <div class="sidebar-user" id="sidebar-user">
+                    <img src="https://i.pravatar.cc/150?u=fitscore42" alt="User">
+                    <div class="sidebar-user-info">
+                        <strong id="user-display-name">Guest</strong>
+                        <span id="user-display-role">Candidate</span>
+                    </div>
+                </div>
+            </div>
+        </nav>
+
+        <!-- ── Main Area ────────────────────────────────────── -->
+        <div class="main-wrap">
+            <!-- Topbar -->
+            <header class="topbar">
+                <div class="topbar-left">
+                    <button class="collapse-btn" id="collapse-btn"><i class="ph ph-list"></i></button>
+                    <div class="search-box">
+                        <i class="ph ph-magnifying-glass"></i>
+                        <input type="text" placeholder="Search jobs, candidates…">
+                    </div>
+                </div>
+                <div class="topbar-right">
+                    <button class="icon-btn"><i class="ph ph-bell"></i><span class="dot"></span></button>
+                    <button class="icon-btn" id="theme-btn"><i class="ph ph-moon"></i></button>
+                    <button class="icon-btn" id="logout-btn" title="Logout"><i class="ph ph-sign-out"></i></button>
+                </div>
+            </header>
+
+            <!-- Content -->
+            <div class="content-scroll">
+
+                <!-- ═══ DASHBOARD ═══ -->
+                <section class="page active" id="page-dashboard">
+                    <h1 class="page-title">Dashboard</h1>
+                    <p class="page-sub">Your AI-driven recruitment intelligence at a glance.</p>
+
+                    <div class="grid-4 mb-1">
+                        <div class="card">
+                            <div class="card-label">FitScore</div>
+                            <div class="card-value text-blue" id="dash-fitscore">85</div>
+                            <div class="card-delta up">↑ Top 15% of candidates</div>
+                        </div>
+                        <div class="card">
+                            <div class="card-label">Jobs Matched</div>
+                            <div class="card-value">142</div>
+                            <div class="card-delta up">+12 this week</div>
+                        </div>
+                        <div class="card">
+                            <div class="card-label">ATS Score</div>
+                            <div class="card-value text-green" id="dash-ats">92</div>
+                            <div class="card-delta up">Resume optimized</div>
+                        </div>
+                        <div class="card">
+                            <div class="card-label">Applications</div>
+                            <div class="card-value">8</div>
+                            <div class="card-delta up">3 in progress</div>
+                        </div>
+                    </div>
+
+                    <div class="grid-2 mt-1">
+                        <div class="card">
+                            <div class="flex-between mb-1">
+                                <h3 class="section-title" style="margin:0">Resume Strength</h3>
+                                <span class="badge green">Strong</span>
+                            </div>
+                            <div class="progress-row"><span class="label">Experience</span><div class="progress-track"><div class="progress-fill green" style="width:85%"></div></div><span class="val">85%</span></div>
+                            <div class="progress-row"><span class="label">Technical Skills</span><div class="progress-track"><div class="progress-fill" style="width:92%"></div></div><span class="val">92%</span></div>
+                            <div class="progress-row"><span class="label">Soft Skills</span><div class="progress-track"><div class="progress-fill amber" style="width:68%"></div></div><span class="val">68%</span></div>
+                            <div class="progress-row"><span class="label">Keywords</span><div class="progress-track"><div class="progress-fill green" style="width:90%"></div></div><span class="val">90%</span></div>
+                        </div>
+                        <div class="card">
+                            <h3 class="section-title">Skills vs Market Demand</h3>
+                            <div class="chart-box"><canvas id="skillsRadar"></canvas></div>
+                        </div>
+                    </div>
+
+                    <div class="card mt-1">
+                        <h3 class="section-title">Skill Gap Analysis</h3>
+                        <div class="chip-group">
+                            <span class="chip matched">Python</span>
+                            <span class="chip matched">JavaScript</span>
+                            <span class="chip matched">SQL</span>
+                            <span class="chip matched">HTML/CSS</span>
+                            <span class="chip missing">Docker</span>
+                            <span class="chip missing">Kubernetes</span>
+                            <span class="chip matched">React</span>
+                            <span class="chip missing">GraphQL</span>
+                            <span class="chip matched">Git</span>
+                        </div>
+                    </div>
+                </section>
+
+                <!-- ═══ JOB FEED ═══ -->
+                <section class="page" id="page-jobs">
+                    <div class="flex-between mb-1">
+                        <div>
+                            <h1 class="page-title">Smart Job Feed</h1>
+                            <p class="page-sub" style="margin:0">Jobs matched to your profile and skills.</p>
+                        </div>
+                        <div class="toggle-wrap">
+                            <span class="toggle-label">Auto-email jobs</span>
+                            <div class="toggle" id="auto-email-toggle"></div>
+                        </div>
+                    </div>
+                    <div class="grid-3" id="jobs-grid">
+                        <div class="empty-state" style="grid-column:1/-1"><i class="ph ph-spinner"></i><p>Loading jobs…</p></div>
+                    </div>
+                </section>
+
+                <!-- ═══ RESUME LAB ═══ -->
+                <section class="page" id="page-resume">
+                    <h1 class="page-title">Resume Lab</h1>
+                    <p class="page-sub">Upload, analyze, and optimize your resume with AI.</p>
+
+                    <div class="grid-2">
+                        <div class="card">
+                            <h3 class="section-title">Upload Resume</h3>
+                            <div class="upload-zone" id="upload-zone">
+                                <i class="ph ph-cloud-arrow-up"></i>
+                                <p>Drag & drop your resume here, or click to browse</p>
+                                <p class="text-sm text-muted" style="margin-top:4px">PDF, DOCX — Max 10MB</p>
+                                <input type="file" id="resume-file" accept=".pdf,.docx,.doc,.txt">
+                            </div>
+                            <div id="upload-status" style="margin-top:1rem"></div>
+
+                            <hr class="divider">
+                            <h3 class="section-title">Resume Versions</h3>
+                            <div class="timeline" id="resume-timeline">
+                                <div class="empty-state text-sm">No resumes uploaded yet.</div>
+                            </div>
+                        </div>
+                        <div class="gap-row">
+                            <div class="card">
+                                <h3 class="section-title">ATS Score</h3>
+                                <div class="score-ring">
+                                    <svg viewBox="0 0 36 36">
+                                        <path class="ring-bg" d="M18 2.0845 a 15.9155 15.9155 0 0 1 0 31.831 a 15.9155 15.9155 0 0 1 0 -31.831"/>
+                                        <path class="ring-fg green" stroke-dasharray="92, 100" d="M18 2.0845 a 15.9155 15.9155 0 0 1 0 31.831 a 15.9155 15.9155 0 0 1 0 -31.831"/>
+                                        <text x="18" y="19" dominant-baseline="central">92</text>
+                                        <text x="18" y="24" class="sub" dominant-baseline="central">out of 100</text>
+                                    </svg>
+                                </div>
+                            </div>
+                            <div class="card">
+                                <h3 class="section-title">AI Suggestions</h3>
+                                <div class="gap-row" style="gap:0.6rem">
+                                    <div class="flex-center text-sm"><i class="ph ph-warning-circle text-red"></i> Add quantifiable metrics to bullet points</div>
+                                    <div class="flex-center text-sm"><i class="ph ph-warning-circle text-red"></i> Missing keyword: "CI/CD"</div>
+                                    <div class="flex-center text-sm"><i class="ph ph-check-circle text-green"></i> Strong action verbs detected</div>
+                                    <div class="flex-center text-sm"><i class="ph ph-check-circle text-green"></i> Summary section is excellent</div>
+                                    <div class="flex-center text-sm"><i class="ph ph-info text-blue"></i> Consider adding a "Projects" section</div>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                </section>
+
+                <!-- ═══ AUTOMATION HUB ═══ -->
+                <section class="page" id="page-automation">
+                    <div class="flex-between mb-1">
+                        <div>
+                            <h1 class="page-title">Automation Hub</h1>
+                            <p class="page-sub" style="margin:0">Visual workflow builder for recruitment pipelines.</p>
+                        </div>
+                        <div class="flex-center">
+                            <button class="btn btn-outline btn-sm"><i class="ph ph-play"></i> Run All</button>
+                            <button class="btn btn-primary btn-sm"><i class="ph ph-plus"></i> New Workflow</button>
+                        </div>
+                    </div>
+                    <div class="automation-layout">
+                        <div class="node-palette">
+                            <div class="palette-title">Components</div>
+                            <div class="palette-item" draggable="true" data-node="scraper"><i class="ph ph-globe"></i><span>Job Scraper</span></div>
+                            <div class="palette-item" draggable="true" data-node="api"><i class="ph ph-plugs-connected"></i><span>API Fetch</span></div>
+                            <div class="palette-item" draggable="true" data-node="ai"><i class="ph ph-brain"></i><span>AI Analyzer</span></div>
+                            <div class="palette-item" draggable="true" data-node="db"><i class="ph ph-database"></i><span>DB Store</span></div>
+                            <div class="palette-item" draggable="true" data-node="email"><i class="ph ph-envelope-simple"></i><span>Email Notify</span></div>
+                        </div>
+                        <div class="canvas-wrap" id="drawflow-canvas"></div>
+                        <div class="props-panel" id="props-panel">
+                            <h3 class="section-title">Properties</h3>
+                            <p class="text-muted text-sm">Select a node to configure.</p>
+                        </div>
+                    </div>
+                </section>
+
+                <!-- ═══ ANALYTICS ═══ -->
+                <section class="page" id="page-analytics">
+                    <h1 class="page-title">Analytics & ML</h1>
+                    <p class="page-sub">Real-time pipeline metrics and model performance.</p>
+                    <div class="grid-4 mb-1">
+                        <div class="card"><div class="card-label">Pipeline Throughput</div><div class="card-value">1,247</div><div class="card-delta up">+18% vs last week</div></div>
+                        <div class="card"><div class="card-label">Jobs Ingested Today</div><div class="card-value">86</div><div class="card-delta up">6 sources active</div></div>
+                        <div class="card"><div class="card-label">Automation Success</div><div class="card-value text-green">98.2%</div><div class="card-delta up">↑ 0.4%</div></div>
+                        <div class="card"><div class="card-label">Model Accuracy</div><div class="card-value text-blue">94.1%</div><div class="card-delta up">Last trained 2h ago</div></div>
+                    </div>
+                    <div class="grid-2">
+                        <div class="card">
+                            <h3 class="section-title">Skill Demand vs Supply</h3>
+                            <div class="chart-box"><canvas id="demandChart"></canvas></div>
+                        </div>
+                        <div class="card">
+                            <h3 class="section-title">FitScore Distribution</h3>
+                            <div class="chart-box"><canvas id="distChart"></canvas></div>
+                        </div>
+                    </div>
+                </section>
+
+                <!-- ═══ RECRUITER ═══ -->
+                <section class="page" id="page-recruiter">
+                    <h1 class="page-title">Recruiter Panel</h1>
+                    <p class="page-sub">Manage hiring pipelines and rank candidates.</p>
+                    <div class="grid-4 mb-1">
+                        <div class="card"><div class="card-label">Total Applicants</div><div class="card-value">324</div></div>
+                        <div class="card"><div class="card-label">Shortlisted</div><div class="card-value text-green">47</div></div>
+                        <div class="card"><div class="card-label">Rejected</div><div class="card-value text-red">198</div></div>
+                        <div class="card"><div class="card-label">Avg Time-to-Hire</div><div class="card-value">14d</div></div>
+                    </div>
+                    <div class="grid-2 mt-1">
+                        <div class="card">
+                            <h3 class="section-title">Hiring Funnel</h3>
+                            <div class="funnel">
+                                <div class="funnel-stage"><span class="stage-label">Applied</span><div class="funnel-bar" style="width:100%"></div><span class="stage-val">324</span></div>
+                                <div class="funnel-stage"><span class="stage-label">Screened</span><div class="funnel-bar" style="width:62%"></div><span class="stage-val">201</span></div>
+                                <div class="funnel-stage"><span class="stage-label">Interview</span><div class="funnel-bar" style="width:30%"></div><span class="stage-val">98</span></div>
+                                <div class="funnel-stage"><span class="stage-label">Selected</span><div class="funnel-bar" style="width:14%"></div><span class="stage-val">47</span></div>
+                                <div class="funnel-stage"><span class="stage-label">Hired</span><div class="funnel-bar" style="width:6%"></div><span class="stage-val">19</span></div>
+                            </div>
+                        </div>
+                        <div class="card">
+                            <h3 class="section-title">Top Candidates</h3>
+                            <table class="data-table">
+                                <thead><tr><th>#</th><th>Name</th><th>FitScore</th><th>ATS</th><th></th></tr></thead>
+                                <tbody>
+                                    <tr><td class="rank-num">1</td><td>Priya Sharma</td><td><span class="badge green">95</span></td><td>88</td><td><button class="btn btn-ghost btn-sm">View</button></td></tr>
+                                    <tr><td class="rank-num">2</td><td>James Chen</td><td><span class="badge green">91</span></td><td>94</td><td><button class="btn btn-ghost btn-sm">View</button></td></tr>
+                                    <tr><td class="rank-num">3</td><td>Anya Petrov</td><td><span class="badge blue">87</span></td><td>85</td><td><button class="btn btn-ghost btn-sm">View</button></td></tr>
+                                    <tr><td class="rank-num">4</td><td>Marcus Lee</td><td><span class="badge amber">78</span></td><td>82</td><td><button class="btn btn-ghost btn-sm">View</button></td></tr>
+                                    <tr><td class="rank-num">5</td><td>Sara Kim</td><td><span class="badge amber">74</span></td><td>79</td><td><button class="btn btn-ghost btn-sm">View</button></td></tr>
+                                </tbody>
+                            </table>
+                        </div>
+                    </div>
+                </section>
+
+                <!-- ═══ DATABASE ═══ -->
+                <section class="page" id="page-database">
+                    <h1 class="page-title">Database Explorer</h1>
+                    <p class="page-sub">Live tables populated via automation pipelines.</p>
+                    <div class="flex-center mb-1" style="gap:6px" id="db-tab-bar"></div>
+                    <div class="card" id="db-table-card">
+                        <div class="empty-state"><i class="ph ph-database"></i><p>Select a table above to view data.</p></div>
+                    </div>
+                </section>
+
+                <!-- ═══ SETTINGS ═══ -->
+                <section class="page" id="page-settings">
+                    <h1 class="page-title">Settings</h1>
+                    <p class="page-sub">Manage your account and preferences.</p>
+                    <div class="card" style="max-width:600px">
+                        <h3 class="section-title">Preferences</h3>
+                        <div class="toggle-wrap mb-1">
+                            <span class="toggle-label">Dark Mode</span>
+                            <div class="toggle on" id="dark-mode-toggle"></div>
+                        </div>
+                        <div class="toggle-wrap mb-1">
+                            <span class="toggle-label">Auto-email matched jobs</span>
+                            <div class="toggle" id="settings-auto-email"></div>
+                        </div>
+                        <div class="toggle-wrap mb-1">
+                            <span class="toggle-label">Auto-enhance resume on match</span>
+                            <div class="toggle" id="settings-auto-enhance"></div>
+                        </div>
+                        <hr class="divider">
+                        <h3 class="section-title">Account</h3>
+                        <p class="text-sm text-muted" id="settings-email">Not logged in</p>
+                        <button class="btn btn-outline btn-sm mt-1" id="settings-logout"><i class="ph ph-sign-out"></i> Sign Out</button>
+                    </div>
+                </section>
+            </div>
+        </div>
+    </div>
+
+    <script src="/js/main.js"></script>
+</body>
+</html>

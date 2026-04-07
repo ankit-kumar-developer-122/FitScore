@@ -1,0 +1,150 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>FitScore - Login</title>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&display=swap" rel="stylesheet">
+    <script src="https://unpkg.com/@phosphor-icons/web"></script>
+    <style>
+        :root {
+            --bg: #09090b; --glass-bg: rgba(24,24,27,0.5); --glass-border: rgba(255,255,255,0.08);
+            --accent: #818cf8; --accent-glow: rgba(129,140,248,0.3); --success: #34d399;
+            --text: #f4f4f5; --text2: #a1a1aa; --radius: 16px;
+        }
+        * { box-sizing: border-box; margin: 0; padding: 0; font-family: 'Inter', sans-serif; }
+        body { background: var(--bg); color: var(--text); min-height: 100vh; display: flex; align-items: center; justify-content: center; overflow: hidden; }
+        .orb { position: fixed; border-radius: 50%; filter: blur(120px); opacity: 0.4; z-index: 0; animation: drift 20s infinite alternate ease-in-out; }
+        .orb-1 { width: 50vw; height: 50vw; background: radial-gradient(circle, rgba(129,140,248,0.25), transparent 70%); top: -20%; left: -10%; }
+        .orb-2 { width: 40vw; height: 40vw; background: radial-gradient(circle, rgba(52,211,153,0.2), transparent 70%); bottom: -10%; right: -10%; animation-delay: -7s; }
+        .orb-3 { width: 35vw; height: 35vw; background: radial-gradient(circle, rgba(236,72,153,0.15), transparent 70%); top: 40%; left: 50%; animation-delay: -12s; }
+        @keyframes drift { 0%{transform:translate(0,0) scale(1)} 100%{transform:translate(8vw,8vh) scale(1.1)} }
+
+        .auth-container {
+            position: relative; z-index: 1; width: 440px; max-width: 95vw;
+            background: var(--glass-bg); backdrop-filter: blur(24px); -webkit-backdrop-filter: blur(24px);
+            border: 1px solid var(--glass-border); border-radius: 24px;
+            padding: 3rem 2.5rem; box-shadow: 0 30px 60px -15px rgba(0,0,0,0.6);
+        }
+        .logo { display: flex; align-items: center; gap: 12px; margin-bottom: 2rem; justify-content: center; }
+        .logo-dot { width: 28px; height: 28px; background: var(--accent); border-radius: 8px; box-shadow: 0 0 20px var(--accent); }
+        .logo h1 { font-size: 1.6rem; font-weight: 700; }
+        .subtitle { text-align: center; color: var(--text2); margin-bottom: 2rem; font-size: 0.95rem; }
+
+        .tab-switcher { display: flex; gap: 0; background: rgba(0,0,0,0.3); border-radius: 12px; padding: 4px; margin-bottom: 2rem; }
+        .tab-btn { flex: 1; padding: 10px; text-align: center; border: none; background: none; color: var(--text2); cursor: pointer; border-radius: 10px; font-weight: 500; transition: all 0.25s; }
+        .tab-btn.active { background: var(--accent); color: white; box-shadow: 0 0 15px var(--accent-glow); }
+
+        .form-group { margin-bottom: 1.25rem; }
+        .form-group label { display: block; font-size: 0.85rem; color: var(--text2); margin-bottom: 6px; }
+        .form-group input, .form-group select {
+            width: 100%; padding: 12px 14px; background: rgba(0,0,0,0.3); border: 1px solid var(--glass-border);
+            border-radius: 12px; color: white; font-size: 0.95rem; outline: none; transition: border 0.2s;
+        }
+        .form-group input:focus, .form-group select:focus { border-color: var(--accent); box-shadow: 0 0 10px var(--accent-glow); }
+        .form-group select option { background: #18181b; }
+
+        .submit-btn {
+            width: 100%; padding: 14px; background: var(--accent); color: white; border: none;
+            border-radius: 12px; font-weight: 600; font-size: 1rem; cursor: pointer;
+            box-shadow: 0 0 20px var(--accent-glow); transition: all 0.2s;
+            display: flex; align-items: center; justify-content: center; gap: 8px;
+        }
+        .submit-btn:hover { filter: brightness(1.15); box-shadow: 0 0 30px var(--accent-glow); transform: translateY(-1px); }
+
+        .error-msg { color: #ef4444; font-size: 0.85rem; text-align: center; margin-top: 1rem; min-height: 20px; }
+        .success-msg { color: var(--success); font-size: 0.85rem; text-align: center; margin-top: 1rem; }
+
+        .hidden { display: none !important; }
+        .register-extra { transition: all 0.3s; }
+    </style>
+</head>
+<body>
+    <div class="orb orb-1"></div>
+    <div class="orb orb-2"></div>
+    <div class="orb orb-3"></div>
+
+    <div class="auth-container">
+        <div class="logo">
+            <div class="logo-dot"></div>
+            <h1>FitScore</h1>
+        </div>
+        <p class="subtitle">AI-Powered Recruitment Intelligence</p>
+
+        <div class="tab-switcher">
+            <button class="tab-btn active" id="tab-login" onclick="switchTab('login')">Sign In</button>
+            <button class="tab-btn" id="tab-register" onclick="switchTab('register')">Create Account</button>
+        </div>
+
+        <form id="auth-form" onsubmit="handleAuth(event)">
+            <div class="form-group register-extra hidden" id="name-group">
+                <label>Full Name</label>
+                <input type="text" id="name" placeholder="Alex Johnson">
+            </div>
+            <div class="form-group">
+                <label>Email</label>
+                <input type="email" id="email" placeholder="you@company.com" required>
+            </div>
+            <div class="form-group">
+                <label>Password</label>
+                <input type="password" id="password" placeholder="••••••••" required>
+            </div>
+            <div class="form-group register-extra hidden" id="role-group">
+                <label>Role</label>
+                <select id="role">
+                    <option value="candidate">Job Seeker / Candidate</option>
+                    <option value="recruiter">Recruiter / Hiring Manager</option>
+                </select>
+            </div>
+            <button type="submit" class="submit-btn" id="submit-btn">
+                <i class="ph ph-sign-in"></i> <span>Sign In</span>
+            </button>
+        </form>
+        <div id="feedback" class="error-msg"></div>
+    </div>
+
+    <script>
+        let mode = 'login';
+
+        function switchTab(tab) {
+            mode = tab;
+            document.getElementById('tab-login').classList.toggle('active', tab === 'login');
+            document.getElementById('tab-register').classList.toggle('active', tab === 'register');
+            document.querySelectorAll('.register-extra').forEach(el => el.classList.toggle('hidden', tab === 'login'));
+            document.querySelector('#submit-btn span').textContent = tab === 'login' ? 'Sign In' : 'Create Account';
+            document.querySelector('#submit-btn i').className = tab === 'login' ? 'ph ph-sign-in' : 'ph ph-user-plus';
+            document.getElementById('feedback').textContent = '';
+        }
+
+        async function handleAuth(e) {
+            e.preventDefault();
+            const feedback = document.getElementById('feedback');
+            feedback.textContent = '';
+            feedback.className = 'error-msg';
+
+            const fd = new FormData();
+            fd.append('email', document.getElementById('email').value);
+            fd.append('password', document.getElementById('password').value);
+
+            if (mode === 'register') {
+                fd.append('name', document.getElementById('name').value);
+                fd.append('role', document.getElementById('role').value);
+            }
+
+            try {
+                const res = await fetch(`/api/${mode === 'login' ? 'login' : 'register'}`, { method: 'POST', body: fd });
+                const data = await res.json();
+                if (!res.ok) {
+                    feedback.textContent = data.detail || 'Authentication failed';
+                    return;
+                }
+                // Store user in session
+                localStorage.setItem('fitscore_user', JSON.stringify(data));
+                window.location.href = '/';
+            } catch (err) {
+                feedback.textContent = 'Network error. Is the server running?';
+            }
+        }
+    </script>
+</body>
+</html>
