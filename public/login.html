@@ -5,7 +5,8 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>FitScore - Login</title>
     <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&display=swap" rel="stylesheet">
-    <script src="https://unpkg.com/@phosphor-icons/web"></script>
+    <script defer src="https://unpkg.com/@phosphor-icons/web"></script>
+    <script defer src="/js/config.js"></script>
     <style>
         :root {
             --bg: #09090b; --glass-bg: rgba(24,24,27,0.5); --glass-border: rgba(255,255,255,0.08);
@@ -106,6 +107,11 @@
     <script>
         let mode = 'login';
 
+        function getApiUrl(path) {
+            const baseUrl = (window.FITSCORE_CONFIG && window.FITSCORE_CONFIG.apiBaseUrl || '').trim().replace(/\/+$/, '');
+            return baseUrl ? `${baseUrl}${path}` : path;
+        }
+
         function switchTab(tab) {
             mode = tab;
             document.getElementById('tab-login').classList.toggle('active', tab === 'login');
@@ -132,7 +138,7 @@
             }
 
             try {
-                const res = await fetch(`/api/${mode === 'login' ? 'login' : 'register'}`, { method: 'POST', body: fd });
+                const res = await fetch(getApiUrl(`/api/${mode === 'login' ? 'login' : 'register'}`), { method: 'POST', body: fd });
                 const data = await res.json();
                 if (!res.ok) {
                     feedback.textContent = data.detail || 'Authentication failed';

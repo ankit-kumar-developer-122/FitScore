@@ -1,6 +1,40 @@
 # FitScore
 FitScore is an AI- Powered recruitment intelligence platform that quantifies how well a candidate fits a job using data-driven scoring , resume analysis, and analytics.
 
+## Local Run
+
+```powershell
+cd C:\Users\ayush\FitScore
+pip install -r requirements.txt
+python -m uvicorn main:app --reload
+```
+
+Open [http://127.0.0.1:8000](http://127.0.0.1:8000)
+
+## Configurable API Base URL
+
+Frontend API calls are configured through [`public/js/config.js`](C:/Users/ayush/FitScore/public/js/config.js).
+
+- Local same-origin setup:
+  Leave `apiBaseUrl` as an empty string.
+- Split frontend/backend deployment:
+  Set `apiBaseUrl` to your FastAPI backend URL.
+
+Example:
+
+```js
+window.FITSCORE_CONFIG = Object.assign(
+    {
+        apiBaseUrl: "https://your-backend.azurewebsites.net"
+    },
+    window.FITSCORE_CONFIG || {}
+);
+```
+
+## Azure Deployment
+
+See [`AZURE_DEPLOYMENT.md`](C:/Users/ayush/FitScore/AZURE_DEPLOYMENT.md) for the recommended Azure Static Web Apps + Azure App Service deployment setup.
+
 
 Live Link: https://salmon-forest-0355c5300.2.azurestaticapps.net/
 1. Product Vision

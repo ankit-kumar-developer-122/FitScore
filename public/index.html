@@ -7,10 +7,8 @@
     <meta name="description" content="AI-powered recruitment intelligence and resume analysis platform">
     <link rel="stylesheet" href="/css/style.css">
     <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&display=swap" rel="stylesheet">
-    <script src="https://unpkg.com/@phosphor-icons/web"></script>
-    <link rel="stylesheet" href="https://cdn.jsdelivr.net/gh/jerosoler/Drawflow/dist/drawflow.min.css">
-    <script src="https://cdn.jsdelivr.net/gh/jerosoler/Drawflow/dist/drawflow.min.js"></script>
-    <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+    <script defer src="https://unpkg.com/@phosphor-icons/web"></script>
+    <script defer src="/js/config.js"></script>
 </head>
 <body class="dark">
     <div class="bg-orb o1"></div>
@@ -91,8 +89,8 @@
                         </div>
                         <div class="card">
                             <div class="card-label">ATS Score</div>
-                            <div class="card-value text-green" id="dash-ats">92</div>
-                            <div class="card-delta up">Resume optimized</div>
+                            <div class="card-value text-green"><span id="dash-ats">00</span><span style="font-size:1rem;margin-left:4px">/100</span></div>
+                            <div class="card-delta" id="dash-ats-status">Upload a resume to analyze</div>
                         </div>
                         <div class="card">
                             <div class="card-label">Applications</div>
@@ -166,6 +164,7 @@
                                 <input type="file" id="resume-file" accept=".pdf,.docx,.doc,.txt">
                             </div>
                             <div id="upload-status" style="margin-top:1rem"></div>
+                            <div id="resume-analysis-summary" class="text-sm text-muted" style="margin-top:0.75rem">Latest ATS Score: 00/100</div>
 
                             <hr class="divider">
                             <h3 class="section-title">Resume Versions</h3>
@@ -179,20 +178,17 @@
                                 <div class="score-ring">
                                     <svg viewBox="0 0 36 36">
                                         <path class="ring-bg" d="M18 2.0845 a 15.9155 15.9155 0 0 1 0 31.831 a 15.9155 15.9155 0 0 1 0 -31.831"/>
-                                        <path class="ring-fg green" stroke-dasharray="92, 100" d="M18 2.0845 a 15.9155 15.9155 0 0 1 0 31.831 a 15.9155 15.9155 0 0 1 0 -31.831"/>
-                                        <text x="18" y="19" dominant-baseline="central">92</text>
+                                        <path class="ring-fg green" id="resume-ats-ring" stroke-dasharray="0, 100" d="M18 2.0845 a 15.9155 15.9155 0 0 1 0 31.831 a 15.9155 15.9155 0 0 1 0 -31.831"/>
+                                        <text x="18" y="19" id="resume-ats-score" dominant-baseline="central">00</text>
                                         <text x="18" y="24" class="sub" dominant-baseline="central">out of 100</text>
                                     </svg>
                                 </div>
                             </div>
                             <div class="card">
                                 <h3 class="section-title">AI Suggestions</h3>
-                                <div class="gap-row" style="gap:0.6rem">
-                                    <div class="flex-center text-sm"><i class="ph ph-warning-circle text-red"></i> Add quantifiable metrics to bullet points</div>
-                                    <div class="flex-center text-sm"><i class="ph ph-warning-circle text-red"></i> Missing keyword: "CI/CD"</div>
-                                    <div class="flex-center text-sm"><i class="ph ph-check-circle text-green"></i> Strong action verbs detected</div>
-                                    <div class="flex-center text-sm"><i class="ph ph-check-circle text-green"></i> Summary section is excellent</div>
-                                    <div class="flex-center text-sm"><i class="ph ph-info text-blue"></i> Consider adding a "Projects" section</div>
+                                <div class="gap-row" id="resume-suggestions" style="gap:0.6rem">
+                                    <div class="flex-center text-sm"><i class="ph ph-info text-blue"></i> Upload a resume to generate ATS suggestions.</div>
+                                    <div class="flex-center text-sm"><i class="ph ph-info text-blue"></i> We will analyze keywords, sections, metrics, and action verbs.</div>
                                 </div>
                             </div>
                         </div>
@@ -325,6 +321,6 @@
         </div>
     </div>
 
-    <script src="/js/main.js"></script>
+    <script defer src="/js/main.js"></script>
 </body>
 </html>

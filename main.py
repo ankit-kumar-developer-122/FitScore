@@ -1,10 +1,42 @@
 from fastapi import FastAPI, UploadFile, File, Form, HTTPException
+from fastapi.middleware.cors import CORSMiddleware
 from fastapi.staticfiles import StaticFiles
 from fastapi.responses import FileResponse, JSONResponse
-import os, sqlite3, hashlib, uuid, json
+import os, sqlite3, hashlib, uuid, json, re
 from datetime import datetime
 
+from pypdf import PdfReader
+from docx import Document
+
 app = FastAPI(title="FitScore API")
+
+allowed_origins_env = os.getenv("ALLOWED_ORIGINS", "*")
+allowed_origins = ["*"] if allowed_origins_env.strip() == "*" else [
+    origin.strip() for origin in allowed_origins_env.split(",") if origin.strip()
+]
+
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=allowed_origins,
+    allow_credentials=True,
+    allow_methods=["*"],
+    allow_headers=["*"],
+)
+
+
+class CachedStaticFiles(StaticFiles):
+    async def get_response(self, path, scope):
+        response = await super().get_response(path, scope)
+        if response.status_code >= 400:
+            return response
+
+        if path.endswith((".css", ".js")):
+            response.headers["Cache-Control"] = "no-cache"
+        elif path.endswith(".html") or path == ".":
+            response.headers["Cache-Control"] = "no-cache"
+        else:
+            response.headers["Cache-Control"] = "public, max-age=3600"
+        return response
 
 # Directories
 os.makedirs("public/css", exist_ok=True)
@@ -54,6 +86,8 @@ def init_db():
         id INTEGER PRIMARY KEY AUTOINCREMENT,
         user_id TEXT, filename TEXT, filepath TEXT,
         version_tag TEXT DEFAULT 'Original',
+        ats_score INTEGER DEFAULT 0,
+        analysis_json TEXT DEFAULT '{}',
         uploaded_at TEXT,
         FOREIGN KEY(user_id) REFERENCES users(id)
     );
@@ -64,6 +98,19 @@ def init_db():
         created_at TEXT
     );
     """)
+    resume_columns = {row[1] for row in c.execute("PRAGMA table_info(resumes)").fetchall()}
+    if "ats_score" not in resume_columns:
+        try:
+            c.execute("ALTER TABLE resumes ADD COLUMN ats_score INTEGER DEFAULT 0")
+        except sqlite3.OperationalError as exc:
+            if "duplicate column name" not in str(exc).lower():
+                raise
+    if "analysis_json" not in resume_columns:
+        try:
+            c.execute("ALTER TABLE resumes ADD COLUMN analysis_json TEXT DEFAULT '{}'")
+        except sqlite3.OperationalError as exc:
+            if "duplicate column name" not in str(exc).lower():
+                raise
     # Seed data if empty
     if c.execute("SELECT COUNT(*) FROM jobs").fetchone()[0] == 0:
         now = datetime.utcnow().isoformat()
@@ -88,6 +135,102 @@ def init_db():
     conn.close()
 
 init_db()
+
+
+ACTION_VERBS = {
+    "built", "created", "developed", "designed", "implemented", "improved",
+    "optimized", "led", "managed", "launched", "delivered", "automated",
+    "analyzed", "architected", "collaborated", "scaled"
+}
+
+COMMON_KEYWORDS = {
+    "python", "javascript", "react", "sql", "aws", "docker", "kubernetes",
+    "ci/cd", "git", "api", "machine learning", "data", "fastapi", "testing"
+}
+
+SECTION_PATTERNS = {
+    "contact": r"(email|phone|linkedin|github)",
+    "summary": r"(summary|profile|objective)",
+    "experience": r"(experience|employment|work history)",
+    "education": r"(education|academic)",
+    "skills": r"(skills|technical skills|technologies)",
+    "projects": r"(projects|project experience)"
+}
+
+
+def extract_resume_text(path: str, ext: str) -> str:
+    ext = ext.lower()
+    if ext == ".pdf":
+        reader = PdfReader(path)
+        return "\n".join((page.extract_text() or "") for page in reader.pages)
+    if ext in {".docx", ".doc"}:
+        document = Document(path)
+        return "\n".join(paragraph.text for paragraph in document.paragraphs)
+    if ext in {".txt", ".md"}:
+        with open(path, "r", encoding="utf-8", errors="ignore") as f:
+            return f.read()
+    raise HTTPException(400, "Unsupported file type for ATS analysis")
+
+
+def analyze_resume_text(text: str) -> dict:
+    lowered = text.lower()
+    words = re.findall(r"\b[\w.+#/-]+\b", text)
+    word_count = len(words)
+    email_present = bool(re.search(r"[\w.+-]+@[\w-]+\.[\w.-]+", text))
+    phone_present = bool(re.search(r"(\+\d{1,3}[\s-]?)?(\d[\s-]?){10,}", text))
+    linkedin_present = "linkedin.com" in lowered
+    github_present = "github.com" in lowered
+    metrics_count = len(re.findall(r"\b\d+%|\b\d+\+|\$\d+|\b\d+\b", text))
+    action_verbs_found = sorted({verb for verb in ACTION_VERBS if re.search(rf"\b{re.escape(verb)}\b", lowered)})
+    keywords_found = sorted({kw for kw in COMMON_KEYWORDS if kw in lowered})
+    sections_found = [name for name, pattern in SECTION_PATTERNS.items() if re.search(pattern, lowered)]
+    all_caps_ratio = (sum(1 for char in text if char.isupper()) / max(1, sum(1 for char in text if char.isalpha())))
+
+    score = 35
+    score += min(15, len(sections_found) * 3)
+    score += 10 if email_present else 0
+    score += 6 if phone_present else 0
+    score += 4 if linkedin_present else 0
+    score += 3 if github_present else 0
+    score += min(12, len(keywords_found) * 2)
+    score += min(10, metrics_count * 2)
+    score += min(8, len(action_verbs_found))
+
+    if word_count < 200:
+        score -= 12
+    elif word_count < 350:
+        score -= 5
+    elif word_count > 1200:
+        score -= 8
+
+    if all_caps_ratio > 0.18:
+        score -= 5
+
+    score = max(0, min(100, score))
+
+    suggestions = []
+    if not email_present or not phone_present:
+        suggestions.append("Add clear contact details so ATS can parse your profile reliably.")
+    if "projects" not in sections_found:
+        suggestions.append("Add a Projects section to surface hands-on work and keywords.")
+    if metrics_count < 3:
+        suggestions.append("Include more quantified achievements like percentages, time saved, or revenue impact.")
+    if len(keywords_found) < 5:
+        suggestions.append("Match more role-specific keywords such as tools, frameworks, and cloud platforms.")
+    if len(action_verbs_found) < 4:
+        suggestions.append("Strengthen bullet points with action verbs like built, led, optimized, or automated.")
+    if word_count < 350:
+        suggestions.append("Your resume may be too short for strong ATS coverage; add more relevant detail.")
+
+    return {
+        "ats_score": score,
+        "word_count": word_count,
+        "keywords_found": keywords_found,
+        "sections_found": sections_found,
+        "metrics_count": metrics_count,
+        "action_verbs_found": action_verbs_found,
+        "suggestions": suggestions[:5],
+    }
 
 # ── Auth Endpoints ───────────────────────────────────────────────────
 def hash_pw(pw):
@@ -163,19 +306,40 @@ async def upload_resume(user_id: str = Form(...), file: UploadFile = File(...), 
     contents = await file.read()
     with open(path, "wb") as f:
         f.write(contents)
+    extracted_text = extract_resume_text(path, ext)
+    analysis = analyze_resume_text(extracted_text)
     conn = get_db()
     conn.execute("INSERT INTO resumes (user_id,filename,filepath,version_tag,uploaded_at) VALUES (?,?,?,?,?)",
                  (user_id, file.filename, path, version_tag, datetime.utcnow().isoformat()))
+    conn.execute(
+        "UPDATE resumes SET ats_score=?, analysis_json=? WHERE id = last_insert_rowid()",
+        (analysis["ats_score"], json.dumps(analysis))
+    )
+    conn.execute("UPDATE users SET ats_score=? WHERE id=?", (analysis["ats_score"], user_id))
     conn.commit()
     conn.close()
-    return {"filename": file.filename, "path": path, "tag": version_tag}
+    return {
+        "filename": file.filename,
+        "path": path,
+        "tag": version_tag,
+        "ats_score": analysis["ats_score"],
+        "analysis": analysis,
+    }
 
 @app.get("/api/resumes/{user_id}")
 async def get_resumes(user_id: str):
     conn = get_db()
     rows = conn.execute("SELECT * FROM resumes WHERE user_id=? ORDER BY uploaded_at DESC", (user_id,)).fetchall()
     conn.close()
-    return [dict(r) for r in rows]
+    resumes = []
+    for row in rows:
+        item = dict(row)
+        try:
+            item["analysis"] = json.loads(item.get("analysis_json") or "{}")
+        except json.JSONDecodeError:
+            item["analysis"] = {}
+        resumes.append(item)
+    return resumes
 
 # ── Applications ─────────────────────────────────────────────────────
 @app.get("/api/applications")
@@ -213,6 +377,11 @@ async def analytics_summary():
     conn.close()
     return {"total_users": total_users, "total_jobs": total_jobs, "total_applications": total_apps, "total_resumes": total_resumes}
 
+
+@app.get("/api/health")
+async def health_check():
+    return {"status": "ok"}
+
 # ── DB Tables (admin view) ──────────────────────────────────────────
 @app.get("/api/db/tables")
 async def db_tables():
@@ -229,7 +398,7 @@ async def db_tables():
 # ── Serve login page ─────────────────────────────────────────────────
 @app.get("/login")
 async def login_page():
-    return FileResponse("public/login.html")
+    return FileResponse("public/login.html", headers={"Cache-Control": "no-cache"})
 
 # ── Static Files (MUST be last) ─────────────────────────────────────
-app.mount("/", StaticFiles(directory="public", html=True), name="public")
+app.mount("/", CachedStaticFiles(directory="public", html=True), name="public")

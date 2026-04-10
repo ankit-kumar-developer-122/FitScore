@@ -1,99 +1,176 @@
-// ═══════════════════════════════════════════════════════════════
-//  FitScore — Main Application Logic
-// ═══════════════════════════════════════════════════════════════
-
 document.addEventListener('DOMContentLoaded', () => {
-    // ── Auth guard ───────────────────────────────────────────────
-    const user = JSON.parse(localStorage.getItem('fitscore_user') || 'null');
-    if (user) {
-        const nameEl = document.getElementById('user-display-name');
-        const roleEl = document.getElementById('user-display-role');
-        const emailEl = document.getElementById('settings-email');
-        if (nameEl) nameEl.textContent = user.name || 'User';
-        if (roleEl) roleEl.textContent = user.role === 'recruiter' ? 'Recruiter' : 'Candidate';
-        if (emailEl) emailEl.textContent = user.email || '';
-    }
-
-    // ── Navigation ──────────────────────────────────────────────
-    const navItems = document.querySelectorAll('.nav-item[data-page]');
-    const pages   = document.querySelectorAll('.page');
+    const resourceCache = new Map();
+    const chartInstances = [];
+    let drawflowStylesLoaded = false;
     let drawflowReady = false;
     let jobsLoaded = false;
     let analyticsReady = false;
+    let dashboardChartsReady = false;
+    let dbData = null;
+    let jobsAbortController = null;
+    let resumesAbortController = null;
+    let dbAbortController = null;
 
-    function showPage(name) {
-        navItems.forEach(n => n.classList.toggle('active', n.dataset.page === name));
-        pages.forEach(p => {
-            p.classList.remove('active');
-            if (p.id === 'page-' + name) p.classList.add('active');
-        });
-        // Lazy init
-        if (name === 'automation' && !drawflowReady) { initDrawflow(); drawflowReady = true; }
-        if (name === 'jobs' && !jobsLoaded) { loadJobs(); jobsLoaded = true; }
-        if (name === 'analytics' && !analyticsReady) { initAnalyticsCharts(); analyticsReady = true; }
-        if (name === 'database') { loadDbTables(); }
-    }
-
-    navItems.forEach(item => {
-        item.addEventListener('click', () => showPage(item.dataset.page));
-    });
-
-    // ── Sidebar collapse ────────────────────────────────────────
-    document.getElementById('collapse-btn').addEventListener('click', () => {
-        document.getElementById('sidebar').classList.toggle('collapsed');
-    });
-
-    // ── Theme toggle ────────────────────────────────────────────
+    const user = JSON.parse(localStorage.getItem('fitscore_user') || 'null');
+    const navItems = document.querySelectorAll('.nav-item[data-page]');
+    const pages = document.querySelectorAll('.page');
+    const sidebar = document.getElementById('sidebar');
+    const collapseBtn = document.getElementById('collapse-btn');
     const themeBtn = document.getElementById('theme-btn');
     const darkToggle = document.getElementById('dark-mode-toggle');
+    const autoEmailToggle = document.getElementById('auto-email-toggle');
+    const logoutBtn = document.getElementById('logout-btn');
+    const settingsLogout = document.getElementById('settings-logout');
+    const uploadZone = document.getElementById('upload-zone');
+    const fileInput = document.getElementById('resume-file');
+    const uploadStatus = document.getElementById('upload-status');
+    const resumeAnalysisSummary = document.getElementById('resume-analysis-summary');
+    const jobsGrid = document.getElementById('jobs-grid');
+    const resumeTimeline = document.getElementById('resume-timeline');
+    const dbTabBar = document.getElementById('db-tab-bar');
+    const dbTableCard = document.getElementById('db-table-card');
+    const dashAts = document.getElementById('dash-ats');
+    const dashAtsStatus = document.getElementById('dash-ats-status');
+    const resumeScoreRing = document.getElementById('resume-ats-ring');
+    const resumeScoreValue = document.getElementById('resume-ats-score');
+    const suggestionsContainer = document.getElementById('resume-suggestions');
+
+    function getApiUrl(path) {
+        const baseUrl = ((window.FITSCORE_CONFIG && window.FITSCORE_CONFIG.apiBaseUrl) || '').trim().replace(/\/+$/, '');
+        return baseUrl ? `${baseUrl}${path}` : path;
+    }
+
+    function loadScriptOnce(src) {
+        if (resourceCache.has(src)) return resourceCache.get(src);
+        const promise = new Promise((resolve, reject) => {
+            const script = document.createElement('script');
+            script.src = src;
+            script.async = true;
+            script.onload = resolve;
+            script.onerror = () => reject(new Error(`Failed to load script: ${src}`));
+            document.head.appendChild(script);
+        });
+        resourceCache.set(src, promise);
+        return promise;
+    }
+
+    function loadStylesheetOnce(href) {
+        if (resourceCache.has(href)) return resourceCache.get(href);
+        const promise = new Promise((resolve, reject) => {
+            const link = document.createElement('link');
+            link.rel = 'stylesheet';
+            link.href = href;
+            link.onload = resolve;
+            link.onerror = () => reject(new Error(`Failed to load stylesheet: ${href}`));
+            document.head.appendChild(link);
+        });
+        resourceCache.set(href, promise);
+        return promise;
+    }
+
+    function escapeHtml(value) {
+        return String(value ?? '')
+            .replaceAll('&', '&amp;')
+            .replaceAll('<', '&lt;')
+            .replaceAll('>', '&gt;')
+            .replaceAll('"', '&quot;')
+            .replaceAll("'", '&#39;');
+    }
+
+    function normalizeSkills(rawSkills) {
+        if (Array.isArray(rawSkills)) return rawSkills;
+        try {
+            return JSON.parse(rawSkills || '[]');
+        } catch {
+            return [];
+        }
+    }
+
+    function updateChartTheme() {
+        chartInstances.forEach((chart) => chart.update());
+    }
+
+    function formatScore(score) {
+        return String(Math.max(0, Number(score) || 0)).padStart(2, '0');
+    }
+
+    function renderEmptyResumeAnalysis() {
+        if (dashAts) dashAts.textContent = '00';
+        if (dashAtsStatus) dashAtsStatus.textContent = 'Upload a resume to analyze';
+        if (resumeScoreRing) resumeScoreRing.setAttribute('stroke-dasharray', '0, 100');
+        if (resumeScoreValue) resumeScoreValue.textContent = '00';
+        if (resumeAnalysisSummary) {
+            resumeAnalysisSummary.textContent = 'Latest ATS Score: 00/100';
+        }
+        if (suggestionsContainer) {
+            suggestionsContainer.innerHTML = `
+                <div class="flex-center text-sm"><i class="ph ph-info text-blue"></i> Upload a resume to generate ATS suggestions.</div>
+                <div class="flex-center text-sm"><i class="ph ph-info text-blue"></i> We will analyze keywords, sections, metrics, and action verbs.</div>
+            `;
+        }
+    }
+
+    function renderResumeAnalysis(analysis) {
+        if (!analysis || typeof analysis.ats_score !== 'number') {
+            renderEmptyResumeAnalysis();
+            return;
+        }
+        if (dashAts) dashAts.textContent = formatScore(analysis.ats_score);
+        if (dashAtsStatus) {
+            dashAtsStatus.textContent = analysis.ats_score >= 80 ? 'Resume optimized' : 'Resume needs improvement';
+            dashAtsStatus.className = `card-delta ${analysis.ats_score >= 80 ? 'up' : 'down'}`;
+        }
+        if (resumeScoreRing && typeof analysis.ats_score === 'number') {
+            resumeScoreRing.setAttribute('stroke-dasharray', `${analysis.ats_score}, 100`);
+        }
+        if (resumeScoreValue && typeof analysis.ats_score === 'number') {
+            resumeScoreValue.textContent = formatScore(analysis.ats_score);
+        }
+        if (suggestionsContainer && Array.isArray(analysis.suggestions) && analysis.suggestions.length) {
+            suggestionsContainer.innerHTML = analysis.suggestions
+                .map((suggestion, index) => {
+                    const iconClass = index < 2 ? 'ph-warning-circle text-red' : 'ph-info text-blue';
+                    return `<div class="flex-center text-sm"><i class="ph ${iconClass}"></i> ${escapeHtml(suggestion)}</div>`;
+                })
+                .join('');
+        } else if (suggestionsContainer) {
+            suggestionsContainer.innerHTML = `
+                <div class="flex-center text-sm"><i class="ph ph-check-circle text-green"></i> Your resume looks ATS-friendly for the current scoring rules.</div>
+                <div class="flex-center text-sm"><i class="ph ph-info text-blue"></i> Try tailoring keywords for each job description to improve matching further.</div>
+            `;
+        }
+        if (resumeAnalysisSummary && typeof analysis.ats_score === 'number') {
+            const keywords = Array.isArray(analysis.keywords_found) ? analysis.keywords_found.length : 0;
+            const metrics = analysis.metrics_count ?? 0;
+            resumeAnalysisSummary.innerHTML = `<strong>Latest ATS Score:</strong> ${analysis.ats_score}/100 <span class="text-muted">• Keywords matched: ${keywords} • Metrics found: ${metrics}</span>`;
+        }
+    }
 
     function setTheme(dark) {
         document.body.className = dark ? 'dark' : 'light';
-        themeBtn.querySelector('i').className = dark ? 'ph ph-moon' : 'ph ph-sun';
+        if (themeBtn) {
+            const icon = themeBtn.querySelector('i');
+            if (icon) icon.className = dark ? 'ph ph-moon' : 'ph ph-sun';
+        }
         if (darkToggle) darkToggle.classList.toggle('on', dark);
         localStorage.setItem('fitscore_theme', dark ? 'dark' : 'light');
+        updateChartTheme();
     }
 
-    const savedTheme = localStorage.getItem('fitscore_theme');
-    setTheme(savedTheme !== 'light');
-
-    themeBtn.addEventListener('click', () => setTheme(document.body.classList.contains('light')));
-    if (darkToggle) darkToggle.addEventListener('click', () => setTheme(!darkToggle.classList.contains('on')));
-
-    // ── Toggles (generic) ───────────────────────────────────────
-    document.querySelectorAll('.toggle').forEach(t => {
-        if (t.id === 'dark-mode-toggle') return; // handled above
-        t.addEventListener('click', () => t.classList.toggle('on'));
-    });
-
-    // ── Auto-email toggle (API) ─────────────────────────────────
-    const autoEmailToggle = document.getElementById('auto-email-toggle');
-    if (autoEmailToggle && user) {
-        autoEmailToggle.addEventListener('click', async () => {
-            try {
-                const res = await fetch('/api/users/' + user.id + '/toggle-email', { method: 'POST' });
-                const data = await res.json();
-                autoEmailToggle.classList.toggle('on', data.auto_email);
-            } catch(e) { /* silent */ }
-        });
-    }
-
-    // ── Logout ──────────────────────────────────────────────────
     function logout() {
         localStorage.removeItem('fitscore_user');
         window.location.href = '/login';
     }
-    document.getElementById('logout-btn').addEventListener('click', logout);
-    const settingsLogout = document.getElementById('settings-logout');
-    if (settingsLogout) settingsLogout.addEventListener('click', logout);
 
-    // ── Dashboard Radar Chart ───────────────────────────────────
-    const radarCtx = document.getElementById('skillsRadar');
-    if (radarCtx) {
-        const isDark = () => document.body.classList.contains('dark');
+    async function initDashboardCharts() {
+        const radarCtx = document.getElementById('skillsRadar');
+        if (!radarCtx) return;
+
+        await loadScriptOnce('https://cdn.jsdelivr.net/npm/chart.js');
         Chart.defaults.color = '#8b8b9e';
         Chart.defaults.font.family = 'Inter';
-        new Chart(radarCtx, {
+
+        const chart = new Chart(radarCtx, {
             type: 'radar',
             data: {
                 labels: ['Frontend', 'Backend', 'DevOps', 'Design', 'Communication', 'Data'],
@@ -114,163 +191,46 @@ document.addEventListener('DOMContentLoaded', () => {
                 }]
             },
             options: {
-                responsive: true, maintainAspectRatio: false,
-                scales: { r: {
-                    grid: { color: 'rgba(255,255,255,0.05)' },
-                    angleLines: { color: 'rgba(255,255,255,0.05)' },
-                    pointLabels: { font: { size: 11 } },
-                    ticks: { display: false }, suggestedMin: 0, suggestedMax: 100
-                }},
-                plugins: { legend: { position: 'bottom', labels: { boxWidth: 12, padding: 16 } } }
+                responsive: true,
+                maintainAspectRatio: false,
+                scales: {
+                    r: {
+                        grid: { color: 'rgba(255,255,255,0.05)' },
+                        angleLines: { color: 'rgba(255,255,255,0.05)' },
+                        pointLabels: { font: { size: 11 } },
+                        ticks: { display: false },
+                        suggestedMin: 0,
+                        suggestedMax: 100
+                    }
+                },
+                plugins: {
+                    legend: {
+                        position: 'bottom',
+                        labels: { boxWidth: 12, padding: 16 }
+                    }
+                }
             }
         });
+        chartInstances.push(chart);
     }
 
-    // ── Load Jobs ───────────────────────────────────────────────
-    async function loadJobs() {
-        const grid = document.getElementById('jobs-grid');
-        try {
-            const res = await fetch('/api/jobs');
-            const jobs = await res.json();
-            grid.innerHTML = jobs.map(j => {
-                const pct = j.match_pct || 0;
-                const color = pct >= 85 ? 'green' : pct >= 70 ? 'blue' : 'amber';
-                return `
-                <div class="card">
-                    <div class="flex-between mb-1">
-                        <span class="badge ${color}">${pct}% Match</span>
-                        <span class="text-sm text-muted">${j.experience || ''}</span>
-                    </div>
-                    <h3 class="fw-600" style="margin-bottom:4px">${j.title}</h3>
-                    <p class="text-sm text-muted flex-center" style="margin-bottom:10px"><i class="ph ph-buildings"></i> ${j.company}</p>
-                    <p class="fw-600" style="margin-bottom:12px">${j.salary || ''}</p>
-                    <div class="chip-group" style="margin-bottom:14px">
-                        ${(JSON.parse(j.skills || '[]')).map(s => `<span class="chip">${s}</span>`).join('')}
-                    </div>
-                    <div class="flex-between" style="gap:8px">
-                        <button class="btn btn-outline btn-sm" style="flex:1;justify-content:center">Save</button>
-                        <button class="btn btn-primary btn-sm" style="flex:1;justify-content:center">Apply</button>
-                    </div>
-                </div>`;
-            }).join('');
-        } catch(e) {
-            grid.innerHTML = '<div class="empty-state" style="grid-column:1/-1"><i class="ph ph-warning"></i><p>Failed to load jobs.</p></div>';
-        }
-    }
+    async function initAnalyticsCharts() {
+        await loadScriptOnce('https://cdn.jsdelivr.net/npm/chart.js');
 
-    // ── Resume Upload ───────────────────────────────────────────
-    const fileInput = document.getElementById('resume-file');
-    const uploadZone = document.getElementById('upload-zone');
-    const uploadStatus = document.getElementById('upload-status');
-
-    if (uploadZone) {
-        uploadZone.addEventListener('dragover', e => { e.preventDefault(); uploadZone.classList.add('dragover'); });
-        uploadZone.addEventListener('dragleave', () => uploadZone.classList.remove('dragover'));
-        uploadZone.addEventListener('drop', e => { e.preventDefault(); uploadZone.classList.remove('dragover');
-            if (e.dataTransfer.files.length) { fileInput.files = e.dataTransfer.files; doUpload(); }
-        });
-        fileInput.addEventListener('change', doUpload);
-    }
-
-    async function doUpload() {
-        if (!fileInput.files.length) return;
-        const uid = user ? user.id : 'guest';
-        const fd = new FormData();
-        fd.append('user_id', uid);
-        fd.append('file', fileInput.files[0]);
-        fd.append('version_tag', 'Original');
-        uploadStatus.innerHTML = '<p class="text-sm text-blue">Uploading…</p>';
-        try {
-            const res = await fetch('/api/resumes/upload', { method: 'POST', body: fd });
-            const data = await res.json();
-            uploadStatus.innerHTML = `<p class="text-sm text-green">✓ Uploaded: ${data.filename}</p>`;
-            loadResumes(uid);
-        } catch(e) {
-            uploadStatus.innerHTML = '<p class="text-sm text-red">Upload failed.</p>';
-        }
-    }
-
-    async function loadResumes(uid) {
-        const tl = document.getElementById('resume-timeline');
-        try {
-            const res = await fetch('/api/resumes/' + uid);
-            const list = await res.json();
-            if (!list.length) { tl.innerHTML = '<div class="empty-state text-sm">No resumes uploaded yet.</div>'; return; }
-            tl.innerHTML = list.map(r => `
-                <div class="timeline-item">
-                    <div class="tl-date">${new Date(r.uploaded_at).toLocaleDateString()}</div>
-                    <div class="tl-title">${r.filename} <span class="badge blue" style="margin-left:6px">${r.version_tag}</span></div>
-                </div>
-            `).join('');
-        } catch(e) {}
-    }
-    if (user) loadResumes(user.id);
-
-    // ── Drawflow ────────────────────────────────────────────────
-    function initDrawflow() {
-        const el = document.getElementById('drawflow-canvas');
-        if (!el) return;
-        const editor = new Drawflow(el);
-        editor.start();
-
-        const mkNode = (icon, label, sub, color) => `
-            <div style="padding:10px;display:flex;align-items:center;gap:8px">
-                <i class="ph ph-${icon}" style="color:${color};font-size:1.4rem"></i>
-                <div><strong style="display:block;font-size:.85rem">${label}</strong>
-                <span style="font-size:.72rem;color:#8b8b9e">${sub}</span></div>
-            </div>`;
-
-        editor.addNode('scraper',0,1,80,80,'scraper',{},mkNode('globe','LinkedIn Scraper','Active','#10b981'));
-        editor.addNode('clean',1,1,350,60,'clean',{},mkNode('funnel','Data Cleaner','Ready','#0061FF'));
-        editor.addNode('db',1,0,620,80,'db',{},mkNode('database','DB Store','Connected','#f59e0b'));
-        editor.addConnection(1,2,'output_1','input_1');
-        editor.addConnection(2,3,'output_1','input_1');
-
-        // Drag from palette
-        let dragNode = null;
-        document.querySelectorAll('.palette-item').forEach(item => {
-            item.addEventListener('dragstart', () => { dragNode = item.dataset.node; });
-        });
-        el.addEventListener('dragover', e => e.preventDefault());
-        el.addEventListener('drop', e => {
-            e.preventDefault();
-            if (!dragNode) return;
-            const x = e.clientX - el.getBoundingClientRect().left;
-            const y = e.clientY - el.getBoundingClientRect().top;
-            editor.addNode(dragNode,1,1,x,y,dragNode,{},mkNode('cube',dragNode,'New','#0061FF'));
-            dragNode = null;
-        });
-
-        // Props panel
-        const panel = document.getElementById('props-panel');
-        editor.on('nodeSelected', id => {
-            panel.innerHTML = `
-                <h3 class="section-title">Node #${id}</h3>
-                <label class="text-sm text-muted" style="display:block;margin-bottom:4px">Name</label>
-                <input style="width:100%;padding:8px 10px;background:var(--bg-input);border:1px solid var(--border);border-radius:var(--r-md);color:var(--text-1);outline:none" value="Node ${id}">
-                <button class="btn btn-primary btn-sm mt-1" style="width:100%;justify-content:center">Save</button>`;
-        });
-        editor.on('nodeUnselected', () => {
-            panel.innerHTML = '<h3 class="section-title">Properties</h3><p class="text-muted text-sm">Select a node to configure.</p>';
-        });
-    }
-
-    // ── Analytics Charts ────────────────────────────────────────
-    function initAnalyticsCharts() {
-        // Demand vs Supply
-        const dCtx = document.getElementById('demandChart');
-        if (dCtx) {
-            new Chart(dCtx, {
+        const demandCtx = document.getElementById('demandChart');
+        if (demandCtx) {
+            const demandChart = new Chart(demandCtx, {
                 type: 'bar',
                 data: {
-                    labels: ['Python','JavaScript','React','SQL','AWS','Docker','Go','ML'],
+                    labels: ['Python', 'JavaScript', 'React', 'SQL', 'AWS', 'Docker', 'Go', 'ML'],
                     datasets: [
-                        { label: 'Market Demand', data: [92,88,82,78,75,70,65,60], backgroundColor: 'rgba(0,97,255,0.6)', borderRadius: 6 },
-                        { label: 'Your Skills',   data: [95,85,80,90,40,30,20,55], backgroundColor: 'rgba(16,185,129,0.5)', borderRadius: 6 }
+                        { label: 'Market Demand', data: [92, 88, 82, 78, 75, 70, 65, 60], backgroundColor: 'rgba(0,97,255,0.6)', borderRadius: 6 },
+                        { label: 'Your Skills', data: [95, 85, 80, 90, 40, 30, 20, 55], backgroundColor: 'rgba(16,185,129,0.5)', borderRadius: 6 }
                     ]
                 },
                 options: {
-                    responsive: true, maintainAspectRatio: false,
+                    responsive: true,
+                    maintainAspectRatio: false,
                     scales: {
                         x: { grid: { display: false } },
                         y: { grid: { color: 'rgba(255,255,255,0.04)' }, beginAtZero: true }
@@ -278,18 +238,20 @@ document.addEventListener('DOMContentLoaded', () => {
                     plugins: { legend: { position: 'bottom', labels: { boxWidth: 12 } } }
                 }
             });
+            chartInstances.push(demandChart);
         }
-        // Distribution
-        const hCtx = document.getElementById('distChart');
-        if (hCtx) {
-            new Chart(hCtx, {
+
+        const distCtx = document.getElementById('distChart');
+        if (distCtx) {
+            const distChart = new Chart(distCtx, {
                 type: 'bar',
                 data: {
-                    labels: ['0-20','21-40','41-60','61-80','81-100'],
-                    datasets: [{ label: 'Candidates', data: [12,34,89,156,78], backgroundColor: 'rgba(0,97,255,0.5)', borderRadius: 6 }]
+                    labels: ['0-20', '21-40', '41-60', '61-80', '81-100'],
+                    datasets: [{ label: 'Candidates', data: [12, 34, 89, 156, 78], backgroundColor: 'rgba(0,97,255,0.5)', borderRadius: 6 }]
                 },
                 options: {
-                    responsive: true, maintainAspectRatio: false,
+                    responsive: true,
+                    maintainAspectRatio: false,
                     scales: {
                         x: { grid: { display: false } },
                         y: { grid: { color: 'rgba(255,255,255,0.04)' }, beginAtZero: true }
@@ -297,46 +259,309 @@ document.addEventListener('DOMContentLoaded', () => {
                     plugins: { legend: { display: false } }
                 }
             });
+            chartInstances.push(distChart);
         }
     }
 
-    // ── Database Explorer ────────────────────────────────────────
-    let dbData = null;
-    async function loadDbTables() {
-        const bar = document.getElementById('db-tab-bar');
-        const card = document.getElementById('db-table-card');
-        if (dbData) return;
+    async function loadJobs() {
+        if (!jobsGrid) return;
+        if (jobsAbortController) jobsAbortController.abort();
+        jobsAbortController = new AbortController();
+
         try {
-            const res = await fetch('/api/db/tables');
+            const res = await fetch(getApiUrl('/api/jobs'), { signal: jobsAbortController.signal });
+            const jobs = (await res.json()).map((job) => ({
+                ...job,
+                skills_list: normalizeSkills(job.skills)
+            }));
+
+            jobsGrid.innerHTML = jobs.map((job) => {
+                const pct = job.match_pct || 0;
+                const color = pct >= 85 ? 'green' : pct >= 70 ? 'blue' : 'amber';
+                return `
+                <div class="card">
+                    <div class="flex-between mb-1">
+                        <span class="badge ${color}">${pct}% Match</span>
+                        <span class="text-sm text-muted">${escapeHtml(job.experience || '')}</span>
+                    </div>
+                    <h3 class="fw-600" style="margin-bottom:4px">${escapeHtml(job.title)}</h3>
+                    <p class="text-sm text-muted flex-center" style="margin-bottom:10px"><i class="ph ph-buildings"></i> ${escapeHtml(job.company)}</p>
+                    <p class="fw-600" style="margin-bottom:12px">${escapeHtml(job.salary || '')}</p>
+                    <div class="chip-group" style="margin-bottom:14px">
+                        ${job.skills_list.map((skill) => `<span class="chip">${escapeHtml(skill)}</span>`).join('')}
+                    </div>
+                    <div class="flex-between" style="gap:8px">
+                        <button class="btn btn-outline btn-sm" style="flex:1;justify-content:center">Save</button>
+                        <button class="btn btn-primary btn-sm" style="flex:1;justify-content:center">Apply</button>
+                    </div>
+                </div>`;
+            }).join('');
+        } catch (error) {
+            if (error.name === 'AbortError') return;
+            jobsGrid.innerHTML = '<div class="empty-state" style="grid-column:1/-1"><i class="ph ph-warning"></i><p>Failed to load jobs.</p></div>';
+        }
+    }
+
+    async function doUpload() {
+        if (!fileInput || !fileInput.files.length || !uploadStatus) return;
+        const uid = user ? user.id : 'guest';
+        const fd = new FormData();
+        fd.append('user_id', uid);
+        fd.append('file', fileInput.files[0]);
+        fd.append('version_tag', 'Original');
+        uploadStatus.innerHTML = '<p class="text-sm text-blue">Uploading...</p>';
+
+        try {
+            const res = await fetch(getApiUrl('/api/resumes/upload'), { method: 'POST', body: fd });
+            const data = await res.json().catch(() => ({}));
+            if (!res.ok) {
+                const message = data.detail || data.message || `Upload failed (${res.status})`;
+                throw new Error(message);
+            }
+            uploadStatus.innerHTML = `<p class="text-sm text-green">Uploaded: ${escapeHtml(data.filename)}</p>`;
+            renderResumeAnalysis(data.analysis);
+            loadResumes(uid);
+        } catch (error) {
+            uploadStatus.innerHTML = `<p class="text-sm text-red">${escapeHtml(error.message || 'Upload failed.')}</p>`;
+        }
+    }
+
+    async function loadResumes(uid) {
+        if (!resumeTimeline) return;
+        if (resumesAbortController) resumesAbortController.abort();
+        resumesAbortController = new AbortController();
+
+        try {
+            const res = await fetch(getApiUrl(`/api/resumes/${uid}`), { signal: resumesAbortController.signal });
+            const list = await res.json();
+            if (!list.length) {
+                resumeTimeline.innerHTML = '<div class="empty-state text-sm">No resumes uploaded yet.</div>';
+                renderEmptyResumeAnalysis();
+                return;
+            }
+            renderResumeAnalysis(list[0].analysis);
+
+            resumeTimeline.innerHTML = list.map((resume) => `
+                <div class="timeline-item">
+                    <div class="tl-date">${new Date(resume.uploaded_at).toLocaleDateString()}</div>
+                    <div class="tl-title">${escapeHtml(resume.filename)} <span class="badge blue" style="margin-left:6px">${escapeHtml(resume.version_tag)}</span> <span class="badge green" style="margin-left:6px">ATS ${escapeHtml(resume.ats_score ?? 0)}</span></div>
+                </div>
+            `).join('');
+        } catch (error) {
+            if (error.name !== 'AbortError') {
+                resumeTimeline.innerHTML = '<div class="empty-state text-sm">Could not load resumes.</div>';
+            }
+        }
+    }
+
+    async function initDrawflow() {
+        const el = document.getElementById('drawflow-canvas');
+        const panel = document.getElementById('props-panel');
+        if (!el || !panel) return;
+
+        if (!drawflowStylesLoaded) {
+            await loadStylesheetOnce('https://cdn.jsdelivr.net/gh/jerosoler/Drawflow/dist/drawflow.min.css');
+            drawflowStylesLoaded = true;
+        }
+        await loadScriptOnce('https://cdn.jsdelivr.net/gh/jerosoler/Drawflow/dist/drawflow.min.js');
+
+        const editor = new Drawflow(el);
+        editor.start();
+
+        const mkNode = (icon, label, sub, color) => `
+            <div style="padding:10px;display:flex;align-items:center;gap:8px">
+                <i class="ph ph-${icon}" style="color:${color};font-size:1.4rem"></i>
+                <div>
+                    <strong style="display:block;font-size:.85rem">${escapeHtml(label)}</strong>
+                    <span style="font-size:.72rem;color:#8b8b9e">${escapeHtml(sub)}</span>
+                </div>
+            </div>`;
+
+        editor.addNode('scraper', 0, 1, 80, 80, 'scraper', {}, mkNode('globe', 'LinkedIn Scraper', 'Active', '#10b981'));
+        editor.addNode('clean', 1, 1, 350, 60, 'clean', {}, mkNode('funnel', 'Data Cleaner', 'Ready', '#0061FF'));
+        editor.addNode('db', 1, 0, 620, 80, 'db', {}, mkNode('database', 'DB Store', 'Connected', '#f59e0b'));
+        editor.addConnection(1, 2, 'output_1', 'input_1');
+        editor.addConnection(2, 3, 'output_1', 'input_1');
+
+        let dragNode = null;
+        document.querySelectorAll('.palette-item').forEach((item) => {
+            item.addEventListener('dragstart', () => {
+                dragNode = item.dataset.node;
+            });
+        });
+
+        el.addEventListener('dragover', (event) => event.preventDefault());
+        el.addEventListener('drop', (event) => {
+            event.preventDefault();
+            if (!dragNode) return;
+            const rect = el.getBoundingClientRect();
+            editor.addNode(dragNode, 1, 1, event.clientX - rect.left, event.clientY - rect.top, dragNode, {}, mkNode('cube', dragNode, 'New', '#0061FF'));
+            dragNode = null;
+        });
+
+        editor.on('nodeSelected', (id) => {
+            panel.innerHTML = `
+                <h3 class="section-title">Node #${id}</h3>
+                <label class="text-sm text-muted" style="display:block;margin-bottom:4px">Name</label>
+                <input style="width:100%;padding:8px 10px;background:var(--bg-input);border:1px solid var(--border);border-radius:var(--r-md);color:var(--text-1);outline:none" value="Node ${id}">
+                <button class="btn btn-primary btn-sm mt-1" style="width:100%;justify-content:center">Save</button>`;
+        });
+
+        editor.on('nodeUnselected', () => {
+            panel.innerHTML = '<h3 class="section-title">Properties</h3><p class="text-muted text-sm">Select a node to configure.</p>';
+        });
+    }
+
+    async function loadDbTables() {
+        if (!dbTabBar || !dbTableCard || dbData) return;
+        if (dbAbortController) dbAbortController.abort();
+        dbAbortController = new AbortController();
+
+        try {
+            const res = await fetch(getApiUrl('/api/db/tables'), { signal: dbAbortController.signal });
             dbData = await res.json();
             const names = Object.keys(dbData);
-            bar.innerHTML = names.map((n,i) =>
-                `<button class="btn ${i===0?'btn-primary':'btn-outline'} btn-sm" data-tbl="${n}">${n}</button>`
+
+            dbTabBar.innerHTML = names.map((name, index) =>
+                `<button class="btn ${index === 0 ? 'btn-primary' : 'btn-outline'} btn-sm" data-tbl="${escapeHtml(name)}">${escapeHtml(name)}</button>`
             ).join('');
-            bar.querySelectorAll('button').forEach(btn => {
+
+            dbTabBar.querySelectorAll('button').forEach((btn) => {
                 btn.addEventListener('click', () => {
-                    bar.querySelectorAll('button').forEach(b => { b.className = 'btn btn-outline btn-sm'; });
+                    dbTabBar.querySelectorAll('button').forEach((button) => {
+                        button.className = 'btn btn-outline btn-sm';
+                    });
                     btn.className = 'btn btn-primary btn-sm';
                     renderTable(btn.dataset.tbl);
                 });
             });
+
             if (names.length) renderTable(names[0]);
-        } catch(e) {
-            card.innerHTML = '<div class="empty-state"><i class="ph ph-warning"></i><p>Could not load tables.</p></div>';
+        } catch (error) {
+            if (error.name === 'AbortError') return;
+            dbTableCard.innerHTML = '<div class="empty-state"><i class="ph ph-warning"></i><p>Could not load tables.</p></div>';
         }
     }
 
     function renderTable(name) {
-        const card = document.getElementById('db-table-card');
+        if (!dbTableCard) return;
         const rows = dbData[name] || [];
-        if (!rows.length) { card.innerHTML = '<div class="empty-state text-sm">Table is empty.</div>'; return; }
+        if (!rows.length) {
+            dbTableCard.innerHTML = '<div class="empty-state text-sm">Table is empty.</div>';
+            return;
+        }
+
         const cols = Object.keys(rows[0]);
-        card.innerHTML = `<div style="overflow-x:auto"><table class="data-table">
-            <thead><tr>${cols.map(c => `<th>${c}</th>`).join('')}</tr></thead>
-            <tbody>${rows.map(r => `<tr>${cols.map(c => `<td>${r[c] ?? ''}</td>`).join('')}</tr>`).join('')}</tbody>
+        dbTableCard.innerHTML = `<div style="overflow-x:auto"><table class="data-table">
+            <thead><tr>${cols.map((col) => `<th>${escapeHtml(col)}</th>`).join('')}</tr></thead>
+            <tbody>${rows.map((row) => `<tr>${cols.map((col) => `<td>${escapeHtml(row[col] ?? '')}</td>`).join('')}</tr>`).join('')}</tbody>
         </table></div>`;
     }
 
-    // ── Init dashboard chart on load ────────────────────────────
-    // Radar chart is already created above. Done!
+    async function showPage(name) {
+        navItems.forEach((navItem) => navItem.classList.toggle('active', navItem.dataset.page === name));
+        pages.forEach((page) => {
+            page.classList.toggle('active', page.id === `page-${name}`);
+        });
+
+        if (name === 'dashboard' && !dashboardChartsReady) {
+            await initDashboardCharts();
+            dashboardChartsReady = true;
+        }
+        if (name === 'automation' && !drawflowReady) {
+            await initDrawflow();
+            drawflowReady = true;
+        }
+        if (name === 'jobs' && !jobsLoaded) {
+            await loadJobs();
+            jobsLoaded = true;
+        }
+        if (name === 'analytics' && !analyticsReady) {
+            await initAnalyticsCharts();
+            analyticsReady = true;
+        }
+        if (name === 'database') {
+            await loadDbTables();
+        }
+    }
+
+    if (user) {
+        const nameEl = document.getElementById('user-display-name');
+        const roleEl = document.getElementById('user-display-role');
+        const emailEl = document.getElementById('settings-email');
+        if (nameEl) nameEl.textContent = user.name || 'User';
+        if (roleEl) roleEl.textContent = user.role === 'recruiter' ? 'Recruiter' : 'Candidate';
+        if (emailEl) emailEl.textContent = user.email || '';
+    }
+
+    const savedTheme = localStorage.getItem('fitscore_theme');
+    setTheme(savedTheme !== 'light');
+
+    navItems.forEach((item) => {
+        item.addEventListener('click', () => {
+            showPage(item.dataset.page);
+        });
+    });
+
+    if (collapseBtn && sidebar) {
+        collapseBtn.addEventListener('click', () => {
+            sidebar.classList.toggle('collapsed');
+            sidebar.classList.toggle('open');
+        });
+    }
+
+    if (themeBtn) {
+        themeBtn.addEventListener('click', () => {
+            setTheme(document.body.classList.contains('light'));
+        });
+    }
+
+    if (darkToggle) {
+        darkToggle.addEventListener('click', () => {
+            setTheme(!darkToggle.classList.contains('on'));
+        });
+    }
+
+    document.querySelectorAll('.toggle').forEach((toggle) => {
+        if (toggle.id === 'dark-mode-toggle') return;
+        toggle.addEventListener('click', () => toggle.classList.toggle('on'));
+    });
+
+    if (autoEmailToggle && user) {
+        autoEmailToggle.addEventListener('click', async () => {
+            try {
+                const res = await fetch(getApiUrl(`/api/users/${user.id}/toggle-email`), { method: 'POST' });
+                const data = await res.json();
+                autoEmailToggle.classList.toggle('on', data.auto_email);
+            } catch {
+                // Keep the current state if the update fails.
+            }
+        });
+    }
+
+    if (logoutBtn) logoutBtn.addEventListener('click', logout);
+    if (settingsLogout) settingsLogout.addEventListener('click', logout);
+
+    if (uploadZone && fileInput) {
+        uploadZone.addEventListener('dragover', (event) => {
+            event.preventDefault();
+            uploadZone.classList.add('dragover');
+        });
+        uploadZone.addEventListener('dragleave', () => {
+            uploadZone.classList.remove('dragover');
+        });
+        uploadZone.addEventListener('drop', (event) => {
+            event.preventDefault();
+            uploadZone.classList.remove('dragover');
+            if (event.dataTransfer.files.length) {
+                fileInput.files = event.dataTransfer.files;
+                doUpload();
+            }
+        });
+        fileInput.addEventListener('change', doUpload);
+    }
+
+    renderEmptyResumeAnalysis();
+    loadResumes(user ? user.id : 'guest');
+    showPage('dashboard');
 });
