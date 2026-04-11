@@ -144,6 +144,49 @@
                             <div class="toggle" id="auto-email-toggle"></div>
                         </div>
                     </div>
+                    <div class="card mb-1">
+                        <div class="flex-between mb-1">
+                            <div>
+                                <h3 class="section-title" style="margin-bottom:4px">Create Job</h3>
+                                <p class="text-sm text-muted">Post a job and trigger matched-user emails through n8n.</p>
+                            </div>
+                            <span class="badge blue">Recruiter Action</span>
+                        </div>
+                        <form id="job-create-form" class="job-form-grid">
+                            <div class="job-field">
+                                <label for="job-title">Job Title</label>
+                                <input id="job-title" name="title" type="text" placeholder="Senior Backend Engineer" required>
+                            </div>
+                            <div class="job-field">
+                                <label for="job-company">Company</label>
+                                <input id="job-company" name="company" type="text" placeholder="Stripe" required>
+                            </div>
+                            <div class="job-field">
+                                <label for="job-salary">Salary</label>
+                                <input id="job-salary" name="salary" type="text" placeholder="$160k - $190k">
+                            </div>
+                            <div class="job-field">
+                                <label for="job-experience">Experience</label>
+                                <input id="job-experience" name="experience" type="text" placeholder="3+ years">
+                            </div>
+                            <div class="job-field job-field-wide">
+                                <label for="job-skills">Skills</label>
+                                <input id="job-skills" name="skills" type="text" placeholder="Python, FastAPI, SQL, Docker" required>
+                            </div>
+                            <div class="job-field job-field-wide">
+                                <label for="job-application-url">Application URL</label>
+                                <input id="job-application-url" name="application_url" type="url" placeholder="https://company.com/careers/job-slug" required>
+                            </div>
+                            <div class="job-field job-field-full">
+                                <label for="job-description">Description</label>
+                                <textarea id="job-description" name="description" rows="4" placeholder="Describe the role, responsibilities, and impact." required></textarea>
+                            </div>
+                            <div class="job-form-actions">
+                                <button type="submit" class="btn btn-primary"><i class="ph ph-paper-plane-tilt"></i> Create Job & Notify Matches</button>
+                            </div>
+                        </form>
+                        <div id="job-create-status" class="text-sm text-muted mt-1">When a new job is created, matched users with auto-email enabled will receive an n8n email notification.</div>
+                    </div>
                     <div class="grid-3" id="jobs-grid">
                         <div class="empty-state" style="grid-column:1/-1"><i class="ph ph-spinner"></i><p>Loading jobs…</p></div>
                     </div>

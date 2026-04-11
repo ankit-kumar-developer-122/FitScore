@@ -35,6 +35,29 @@ window.FITSCORE_CONFIG = Object.assign(
 
 See [`AZURE_DEPLOYMENT.md`](C:/Users/ayush/FitScore/AZURE_DEPLOYMENT.md) for the recommended Azure Static Web Apps + Azure App Service deployment setup.
 
+## n8n Job Match Emails
+
+This project can send matched-job email events to n8n.
+
+Set these backend environment variables:
+
+```text
+N8N_WEBHOOK_URL=https://your-n8n-host/webhook/fitscore-job-match
+N8N_WEBHOOK_SECRET=your-shared-secret
+JOB_MATCH_THRESHOLD=60
+```
+
+Behavior:
+
+- when a new job is created, the backend finds matching candidates
+- it sends matched job payloads to n8n
+- n8n emails the user with the direct application link
+- duplicate notifications for the same user and job are skipped
+
+Reference workflow:
+
+- [`n8n/job-match-email-workflow.json`](C:/Users/ayush/FitScore/n8n/job-match-email-workflow.json)
+
 
 Live Link: https://salmon-forest-0355c5300.2.azurestaticapps.net/
 1. Product Vision

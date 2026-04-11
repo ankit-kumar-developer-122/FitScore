@@ -1,0 +1,134 @@
+{
+  "name": "FitScore Job Match Email",
+  "nodes": [
+    {
+      "parameters": {
+        "path": "fitscore-job-match",
+        "httpMethod": "POST",
+        "responseMode": "lastNode"
+      },
+      "id": "Webhook_1",
+      "name": "Webhook",
+      "type": "n8n-nodes-base.webhook",
+      "typeVersion": 2,
+      "position": [
+        260,
+        300
+      ]
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "string": [
+            {
+              "value1": "={{$json.headers[\"x-fitscore-secret\"] || \"\"}}",
+              "operation": "equal",
+              "value2": "YOUR_SHARED_SECRET"
+            }
+          ]
+        }
+      },
+      "id": "If_Secret",
+      "name": "Secret Valid",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2,
+      "position": [
+        500,
+        300
+      ]
+    },
+    {
+      "parameters": {
+        "fromEmail": "jobs@yourdomain.com",
+        "toEmail": "={{$json.body.user.email}}",
+        "subject": "={{`New matched job: ${$json.body.job.title} at ${$json.body.job.company}`}}",
+        "text": "={{`Hi ${$json.body.user.name},\n\nWe found a matched job for you.\n\nRole: ${$json.body.job.title}\nCompany: ${$json.body.job.company}\nMatch score: ${$json.body.match.score}%\nApply here: ${$json.body.job.application_url}\n\nShared skills: ${($json.body.match.shared_skills || []).join(', ') || 'Not available'}\n\nBest,\nFitScore`}}"
+      },
+      "id": "Send_Email",
+      "name": "Send Email",
+      "type": "n8n-nodes-base.smtp",
+      "typeVersion": 1,
+      "position": [
+        760,
+        220
+      ],
+      "credentials": {
+        "smtp": {
+          "id": "REPLACE_SMTP_CREDENTIAL_ID",
+          "name": "SMTP account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "responseBody": "={{ { ok: true, emailed: $json.body.user.email, job: $json.body.job.title } }}"
+      },
+      "id": "Respond_OK",
+      "name": "Respond OK",
+      "type": "n8n-nodes-base.respondToWebhook",
+      "typeVersion": 1,
+      "position": [
+        1020,
+        220
+      ]
+    },
+    {
+      "parameters": {
+        "responseCode": 401,
+        "responseBody": "={{ { ok: false, error: 'Invalid secret' } }}"
+      },
+      "id": "Respond_401",
+      "name": "Respond Unauthorized",
+      "type": "n8n-nodes-base.respondToWebhook",
+      "typeVersion": 1,
+      "position": [
+        760,
+        420
+      ]
+    }
+  ],
+  "connections": {
+    "Webhook": {
+      "main": [
+        [
+          {
+            "node": "Secret Valid",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Secret Valid": {
+      "main": [
+        [
+          {
+            "node": "Send Email",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Respond Unauthorized",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Send Email": {
+      "main": [
+        [
+          {
+            "node": "Respond OK",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "active": false,
+  "settings": {}
+}

@@ -402,6 +402,61 @@ body.light .bg-orb { opacity: 0.12; }
   position: absolute; inset: 0; opacity: 0; cursor: pointer;
 }
 
+.job-form-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 1rem;
+}
+
+.job-field {
+  display: flex;
+  flex-direction: column;
+  gap: 0.45rem;
+}
+
+.job-field label {
+  font-size: 0.82rem;
+  color: var(--text-2);
+  font-weight: 500;
+}
+
+.job-field input,
+.job-field textarea {
+  width: 100%;
+  padding: 0.8rem 0.95rem;
+  background: var(--bg-input);
+  border: 1px solid var(--border);
+  border-radius: var(--r-md);
+  color: var(--text-1);
+  outline: none;
+  transition: border 0.2s var(--ease), box-shadow 0.2s var(--ease);
+}
+
+.job-field textarea {
+  resize: vertical;
+  min-height: 120px;
+}
+
+.job-field input:focus,
+.job-field textarea:focus {
+  border-color: var(--blue);
+  box-shadow: 0 0 0 3px rgba(0, 97, 255, 0.12);
+}
+
+.job-field-wide {
+  grid-column: span 1;
+}
+
+.job-field-full,
+.job-form-actions {
+  grid-column: 1 / -1;
+}
+
+.job-form-actions {
+  display: flex;
+  justify-content: flex-start;
+}
+
 /* ── Resume version timeline ──────────────────────────────────── */
 .timeline { position: relative; padding-left: 24px; }
 .timeline::before {
@@ -477,6 +532,8 @@ body.light .bg-orb { opacity: 0.12; }
   .sidebar.open { left: 0; }
   .automation-layout { flex-direction: column; height: auto; }
   .node-palette, .props-panel { width: 100%; }
+  .job-form-grid { grid-template-columns: 1fr; }
+  .job-field-wide { grid-column: auto; }
 }
 
 @media (prefers-reduced-motion: reduce) {

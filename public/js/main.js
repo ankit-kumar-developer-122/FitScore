@@ -26,6 +26,8 @@ document.addEventListener('DOMContentLoaded', () => {
     const uploadStatus = document.getElementById('upload-status');
     const resumeAnalysisSummary = document.getElementById('resume-analysis-summary');
     const jobsGrid = document.getElementById('jobs-grid');
+    const jobCreateForm = document.getElementById('job-create-form');
+    const jobCreateStatus = document.getElementById('job-create-status');
     const resumeTimeline = document.getElementById('resume-timeline');
     const dbTabBar = document.getElementById('db-tab-bar');
     const dbTableCard = document.getElementById('db-table-card');
@@ -292,13 +294,52 @@ document.addEventListener('DOMContentLoaded', () => {
                     </div>
                     <div class="flex-between" style="gap:8px">
                         <button class="btn btn-outline btn-sm" style="flex:1;justify-content:center">Save</button>
-                        <button class="btn btn-primary btn-sm" style="flex:1;justify-content:center">Apply</button>
+                        ${job.application_url
+                            ? `<a class="btn btn-primary btn-sm" style="flex:1;justify-content:center" href="${escapeHtml(job.application_url)}" target="_blank" rel="noopener noreferrer">Apply</a>`
+                            : '<button class="btn btn-primary btn-sm" style="flex:1;justify-content:center">Apply</button>'}
                     </div>
                 </div>`;
             }).join('');
         } catch (error) {
             if (error.name === 'AbortError') return;
             jobsGrid.innerHTML = '<div class="empty-state" style="grid-column:1/-1"><i class="ph ph-warning"></i><p>Failed to load jobs.</p></div>';
+        }
+    }
+
+    async function createJob(event) {
+        event.preventDefault();
+        if (!jobCreateForm || !jobCreateStatus) return;
+
+        const formData = new FormData(jobCreateForm);
+        const skills = String(formData.get('skills') || '')
+            .split(',')
+            .map((skill) => skill.trim())
+            .filter(Boolean);
+
+        formData.set('skills', JSON.stringify(skills));
+        jobCreateStatus.innerHTML = '<span class="text-blue">Creating job and notifying matched users...</span>';
+
+        try {
+            const res = await fetch(getApiUrl('/api/jobs'), {
+                method: 'POST',
+                body: formData,
+            });
+            const data = await res.json().catch(() => ({}));
+            if (!res.ok) {
+                throw new Error(data.detail || data.message || `Job creation failed (${res.status})`);
+            }
+
+            jobCreateForm.reset();
+            const notifications = data.notifications || {};
+            jobCreateStatus.innerHTML = `
+                <span class="text-green">Job created successfully.</span>
+                <span class="text-muted"> Notified ${escapeHtml(notifications.notified_count ?? 0)} matched users for ${escapeHtml(notifications.job_title || 'this role')}.</span>
+            `;
+            jobsLoaded = false;
+            await loadJobs();
+            jobsLoaded = true;
+        } catch (error) {
+            jobCreateStatus.innerHTML = `<span class="text-red">${escapeHtml(error.message || 'Could not create job.')}</span>`;
         }
     }
 
@@ -559,6 +600,10 @@ document.addEventListener('DOMContentLoaded', () => {
             }
         });
         fileInput.addEventListener('change', doUpload);
+    }
+
+    if (jobCreateForm) {
+        jobCreateForm.addEventListener('submit', createJob);
     }
 
     renderEmptyResumeAnalysis();

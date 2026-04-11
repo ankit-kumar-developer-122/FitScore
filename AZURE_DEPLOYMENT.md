@@ -44,6 +44,9 @@ In Azure App Service, set:
 
 ```text
 ALLOWED_ORIGINS=https://YOUR-STATIC-WEB-APP.azurestaticapps.net
+N8N_WEBHOOK_URL=https://YOUR-N8N-HOST/webhook/fitscore-job-match
+N8N_WEBHOOK_SECRET=YOUR_SHARED_SECRET
+JOB_MATCH_THRESHOLD=60
 ```
 
 For multiple allowed origins, use a comma-separated list.

@@ -4,6 +4,8 @@ from fastapi.staticfiles import StaticFiles
 from fastapi.responses import FileResponse, JSONResponse
 import os, sqlite3, hashlib, uuid, json, re
 from datetime import datetime
+from urllib import request as urlrequest
+from urllib.error import URLError, HTTPError
 
 from pypdf import PdfReader
 from docx import Document
@@ -45,6 +47,9 @@ os.makedirs("uploads", exist_ok=True)
 
 # ── Database Setup ───────────────────────────────────────────────────
 DB_PATH = "fitscore.db"
+N8N_WEBHOOK_URL = os.getenv("N8N_WEBHOOK_URL", "").strip()
+N8N_WEBHOOK_SECRET = os.getenv("N8N_WEBHOOK_SECRET", "").strip()
+MATCH_THRESHOLD = int(os.getenv("JOB_MATCH_THRESHOLD", "60"))
 
 def get_db():
     conn = sqlite3.connect(DB_PATH)
@@ -72,7 +77,8 @@ def init_db():
         title TEXT, company TEXT, salary TEXT,
         match_pct INTEGER DEFAULT 0, status TEXT DEFAULT 'active',
         skills TEXT DEFAULT '[]', experience TEXT,
-        description TEXT, created_at TEXT
+        description TEXT, application_url TEXT DEFAULT '',
+        created_at TEXT
     );
     CREATE TABLE IF NOT EXISTS applications (
         id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -97,8 +103,21 @@ def init_db():
         runs INTEGER DEFAULT 0, success_rate REAL DEFAULT 100.0,
         created_at TEXT
     );
+    CREATE TABLE IF NOT EXISTS notification_logs (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        user_id TEXT NOT NULL,
+        job_id INTEGER NOT NULL,
+        channel TEXT NOT NULL,
+        status TEXT NOT NULL,
+        payload_json TEXT DEFAULT '{}',
+        created_at TEXT,
+        UNIQUE(user_id, job_id, channel),
+        FOREIGN KEY(user_id) REFERENCES users(id),
+        FOREIGN KEY(job_id) REFERENCES jobs(id)
+    );
     """)
     resume_columns = {row[1] for row in c.execute("PRAGMA table_info(resumes)").fetchall()}
+    job_columns = {row[1] for row in c.execute("PRAGMA table_info(jobs)").fetchall()}
     if "ats_score" not in resume_columns:
         try:
             c.execute("ALTER TABLE resumes ADD COLUMN ats_score INTEGER DEFAULT 0")
@@ -111,18 +130,24 @@ def init_db():
         except sqlite3.OperationalError as exc:
             if "duplicate column name" not in str(exc).lower():
                 raise
+    if "application_url" not in job_columns:
+        try:
+            c.execute("ALTER TABLE jobs ADD COLUMN application_url TEXT DEFAULT ''")
+        except sqlite3.OperationalError as exc:
+            if "duplicate column name" not in str(exc).lower():
+                raise
     # Seed data if empty
     if c.execute("SELECT COUNT(*) FROM jobs").fetchone()[0] == 0:
         now = datetime.utcnow().isoformat()
         jobs = [
-            ("Senior Frontend Engineer","Vercel","$150k",95,"active",'["JavaScript","React","CSS"]',"3+ yrs","Build next-gen web UIs",now),
-            ("Data Scientist","OpenAI","$180k",88,"active",'["Python","ML","Statistics"]',"2+ yrs","Work on cutting-edge AI models",now),
-            ("Backend Engineer","Stripe","$160k",82,"active",'["Python","Go","SQL"]',"4+ yrs","Design payment infrastructure",now),
-            ("Product Designer","Figma","$140k",78,"active",'["Figma","UI/UX","Prototyping"]',"2+ yrs","Shape the future of design tools",now),
-            ("ML Engineer","DeepMind","$200k",92,"active",'["Python","TensorFlow","Research"]',"3+ yrs","Push boundaries of AI research",now),
-            ("DevOps Lead","Netflix","$170k",75,"active",'["AWS","Kubernetes","Terraform"]',"5+ yrs","Scale global streaming infra",now),
+            ("Senior Frontend Engineer","Vercel","$150k",95,"active",'["JavaScript","React","CSS"]',"3+ yrs","Build next-gen web UIs","https://vercel.com/careers",now),
+            ("Data Scientist","OpenAI","$180k",88,"active",'["Python","ML","Statistics"]',"2+ yrs","Work on cutting-edge AI models","https://openai.com/careers",now),
+            ("Backend Engineer","Stripe","$160k",82,"active",'["Python","Go","SQL"]',"4+ yrs","Design payment infrastructure","https://stripe.com/jobs",now),
+            ("Product Designer","Figma","$140k",78,"active",'["Figma","UI/UX","Prototyping"]',"2+ yrs","Shape the future of design tools","https://www.figma.com/careers/",now),
+            ("ML Engineer","DeepMind","$200k",92,"active",'["Python","TensorFlow","Research"]',"3+ yrs","Push boundaries of AI research","https://deepmind.google/about/careers/",now),
+            ("DevOps Lead","Netflix","$170k",75,"active",'["AWS","Kubernetes","Terraform"]',"5+ yrs","Scale global streaming infra","https://jobs.netflix.com/",now),
         ]
-        c.executemany("INSERT INTO jobs (title,company,salary,match_pct,status,skills,experience,description,created_at) VALUES (?,?,?,?,?,?,?,?,?)", jobs)
+        c.executemany("INSERT INTO jobs (title,company,salary,match_pct,status,skills,experience,description,application_url,created_at) VALUES (?,?,?,?,?,?,?,?,?,?)", jobs)
     if c.execute("SELECT COUNT(*) FROM workflows").fetchone()[0] == 0:
         now = datetime.utcnow().isoformat()
         wfs = [
@@ -210,17 +235,31 @@ def analyze_resume_text(text: str) -> dict:
 
     suggestions = []
     if not email_present or not phone_present:
-        suggestions.append("Add clear contact details so ATS can parse your profile reliably.")
+        suggestions.append("Add email, phone, and LinkedIn at the top.")
     if "projects" not in sections_found:
-        suggestions.append("Add a Projects section to surface hands-on work and keywords.")
+        suggestions.append("Add a Projects section with tools and outcomes.")
     if metrics_count < 3:
-        suggestions.append("Include more quantified achievements like percentages, time saved, or revenue impact.")
+        suggestions.append("Add numbers like %, time saved, revenue, or users served.")
     if len(keywords_found) < 5:
-        suggestions.append("Match more role-specific keywords such as tools, frameworks, and cloud platforms.")
+        suggestions.append("Match more job keywords from the target role.")
     if len(action_verbs_found) < 4:
-        suggestions.append("Strengthen bullet points with action verbs like built, led, optimized, or automated.")
+        suggestions.append("Start bullets with strong verbs like built, led, or improved.")
     if word_count < 350:
-        suggestions.append("Your resume may be too short for strong ATS coverage; add more relevant detail.")
+        suggestions.append("Add more relevant detail to reach stronger ATS coverage.")
+
+    bonus_suggestions = []
+    if "summary" not in sections_found:
+        bonus_suggestions.append("Add a 2-line summary tailored to the role.")
+    if len(keywords_found) >= 5:
+        bonus_suggestions.append("Mirror exact skill names from the job description.")
+    if metrics_count >= 3:
+        bonus_suggestions.append("Move your strongest quantified wins to the top third.")
+    if "skills" in sections_found:
+        bonus_suggestions.append("Group skills by language, framework, cloud, and tools.")
+    if not github_present:
+        bonus_suggestions.append("Add GitHub or portfolio links if they support the role.")
+
+    suggestions.extend(item for item in bonus_suggestions if item not in suggestions)
 
     return {
         "ats_score": score,
@@ -230,6 +269,151 @@ def analyze_resume_text(text: str) -> dict:
         "metrics_count": metrics_count,
         "action_verbs_found": action_verbs_found,
         "suggestions": suggestions[:5],
+    }
+
+
+def normalize_skill_terms(raw_skills) -> set[str]:
+    if isinstance(raw_skills, str):
+        try:
+            raw_skills = json.loads(raw_skills)
+        except json.JSONDecodeError:
+            raw_skills = [item.strip() for item in raw_skills.split(",") if item.strip()]
+    if not isinstance(raw_skills, list):
+        return set()
+    return {str(skill).strip().lower() for skill in raw_skills if str(skill).strip()}
+
+
+def get_user_match_profile(conn: sqlite3.Connection, user_row: sqlite3.Row) -> dict:
+    stored_skills = normalize_skill_terms(user_row["skills"] or "[]")
+    latest_resume = conn.execute(
+        "SELECT ats_score, analysis_json FROM resumes WHERE user_id=? ORDER BY uploaded_at DESC LIMIT 1",
+        (user_row["id"],)
+    ).fetchone()
+    resume_analysis = {}
+    if latest_resume and latest_resume["analysis_json"]:
+        try:
+            resume_analysis = json.loads(latest_resume["analysis_json"])
+        except json.JSONDecodeError:
+            resume_analysis = {}
+    resume_keywords = {str(item).strip().lower() for item in resume_analysis.get("keywords_found", []) if str(item).strip()}
+    combined_skills = sorted(stored_skills | resume_keywords)
+    return {
+        "skills": combined_skills,
+        "ats_score": int((latest_resume["ats_score"] if latest_resume and latest_resume["ats_score"] is not None else user_row["ats_score"]) or 0),
+    }
+
+
+def calculate_job_match(job_skills: set[str], user_profile: dict) -> int:
+    user_skills = set(user_profile["skills"])
+    if not user_skills:
+        return 0
+    overlap = len(job_skills & user_skills)
+    skill_score = int((overlap / max(1, len(job_skills))) * 70) if job_skills else 0
+    ats_bonus = min(30, int(user_profile["ats_score"] * 0.3))
+    return min(100, skill_score + ats_bonus)
+
+
+def build_match_payload(user_row: sqlite3.Row, job_row: sqlite3.Row, match_score: int, user_profile: dict) -> dict:
+    return {
+        "user": {
+            "id": user_row["id"],
+            "name": user_row["name"],
+            "email": user_row["email"],
+            "role": user_row["role"],
+            "ats_score": user_profile["ats_score"],
+        },
+        "job": {
+            "id": job_row["id"],
+            "title": job_row["title"],
+            "company": job_row["company"],
+            "salary": job_row["salary"],
+            "experience": job_row["experience"],
+            "description": job_row["description"],
+            "application_url": job_row["application_url"],
+        },
+        "match": {
+            "score": match_score,
+            "shared_skills": sorted(set(user_profile["skills"]) & normalize_skill_terms(job_row["skills"] or "[]")),
+        },
+        "sent_at": datetime.utcnow().isoformat(),
+    }
+
+
+def send_n8n_webhook(payload: dict) -> tuple[bool, str]:
+    if not N8N_WEBHOOK_URL:
+        return False, "N8N webhook URL is not configured"
+    req = urlrequest.Request(
+        N8N_WEBHOOK_URL,
+        data=json.dumps(payload).encode("utf-8"),
+        headers={
+            "Content-Type": "application/json",
+            **({"X-FitScore-Secret": N8N_WEBHOOK_SECRET} if N8N_WEBHOOK_SECRET else {})
+        },
+        method="POST",
+    )
+    try:
+        with urlrequest.urlopen(req, timeout=10) as response:
+            return True, f"Webhook accepted with status {response.status}"
+    except HTTPError as exc:
+        return False, f"Webhook HTTP error {exc.code}"
+    except URLError as exc:
+        return False, f"Webhook connection error: {exc.reason}"
+
+
+def notify_matches_for_job(conn: sqlite3.Connection, job_id: int, auto_email_only: bool = True) -> dict:
+    job_row = conn.execute("SELECT * FROM jobs WHERE id=?", (job_id,)).fetchone()
+    if not job_row:
+        raise HTTPException(404, "Job not found")
+
+    user_query = "SELECT * FROM users WHERE role='candidate'"
+    if auto_email_only:
+        user_query += " AND auto_email=1"
+    user_rows = conn.execute(user_query).fetchall()
+
+    job_skills = normalize_skill_terms(job_row["skills"] or "[]")
+    notified = []
+    skipped = 0
+
+    for user_row in user_rows:
+        prior = conn.execute(
+            "SELECT 1 FROM notification_logs WHERE user_id=? AND job_id=? AND channel='n8n_email'",
+            (user_row["id"], job_id)
+        ).fetchone()
+        if prior:
+            skipped += 1
+            continue
+
+        user_profile = get_user_match_profile(conn, user_row)
+        match_score = calculate_job_match(job_skills, user_profile)
+        if match_score < MATCH_THRESHOLD:
+            continue
+
+        payload = build_match_payload(user_row, job_row, match_score, user_profile)
+        ok, message = send_n8n_webhook(payload)
+        conn.execute(
+            "INSERT OR IGNORE INTO notification_logs (user_id, job_id, channel, status, payload_json, created_at) VALUES (?,?,?,?,?,?)",
+            (
+                user_row["id"],
+                job_id,
+                "n8n_email",
+                "sent" if ok else "failed",
+                json.dumps({"payload": payload, "message": message}),
+                datetime.utcnow().isoformat(),
+            )
+        )
+        if ok:
+            notified.append({
+                "user_id": user_row["id"],
+                "email": user_row["email"],
+                "match_score": match_score,
+            })
+
+    return {
+        "job_id": job_id,
+        "job_title": job_row["title"],
+        "notified_count": len(notified),
+        "skipped_count": skipped,
+        "notified_users": notified,
     }
 
 # ── Auth Endpoints ───────────────────────────────────────────────────
@@ -289,13 +473,18 @@ async def get_jobs():
     return [dict(r) for r in rows]
 
 @app.post("/api/jobs")
-async def create_job(title: str = Form(...), company: str = Form(...), salary: str = Form(""), skills: str = Form("[]"), experience: str = Form(""), description: str = Form("")):
+async def create_job(title: str = Form(...), company: str = Form(...), salary: str = Form(""), skills: str = Form("[]"), experience: str = Form(""), description: str = Form(""), application_url: str = Form("")):
     conn = get_db()
-    conn.execute("INSERT INTO jobs (title,company,salary,skills,experience,description,created_at) VALUES (?,?,?,?,?,?,?)",
-                 (title, company, salary, skills, experience, description, datetime.utcnow().isoformat()))
+    cursor = conn.cursor()
+    cursor.execute(
+        "INSERT INTO jobs (title,company,salary,skills,experience,description,application_url,created_at) VALUES (?,?,?,?,?,?,?,?)",
+        (title, company, salary, skills, experience, description, application_url, datetime.utcnow().isoformat())
+    )
+    job_id = cursor.lastrowid
+    notification_result = notify_matches_for_job(conn, job_id)
     conn.commit()
     conn.close()
-    return {"ok": True}
+    return {"ok": True, "job_id": job_id, "notifications": notification_result}
 
 # ── Resume Upload ────────────────────────────────────────────────────
 @app.post("/api/resumes/upload")
@@ -357,6 +546,15 @@ async def apply_job(user_id: str = Form(...), job_id: int = Form(...)):
     conn.commit()
     conn.close()
     return {"ok": True}
+
+
+@app.post("/api/automation/match-and-notify")
+async def match_and_notify(job_id: int = Form(...), auto_email_only: int = Form(1)):
+    conn = get_db()
+    result = notify_matches_for_job(conn, job_id, auto_email_only=bool(auto_email_only))
+    conn.commit()
+    conn.close()
+    return result
 
 # ── Workflows ────────────────────────────────────────────────────────
 @app.get("/api/workflows")
