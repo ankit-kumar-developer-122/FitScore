@@ -96,7 +96,8 @@ def init_db():
         title TEXT, company TEXT, salary TEXT,
         match_pct INTEGER DEFAULT 0, status TEXT DEFAULT 'active',
         skills TEXT DEFAULT '[]', experience TEXT,
-        description TEXT, application_url TEXT DEFAULT '',
+        description TEXT, location TEXT DEFAULT '',
+        package_text TEXT DEFAULT '', application_url TEXT DEFAULT '',
         created_at TEXT
     );
     CREATE TABLE IF NOT EXISTS applications (
@@ -149,6 +150,18 @@ def init_db():
         except sqlite3.OperationalError as exc:
             if "duplicate column name" not in str(exc).lower():
                 raise
+    if "location" not in job_columns:
+        try:
+            c.execute("ALTER TABLE jobs ADD COLUMN location TEXT DEFAULT ''")
+        except sqlite3.OperationalError as exc:
+            if "duplicate column name" not in str(exc).lower():
+                raise
+    if "package_text" not in job_columns:
+        try:
+            c.execute("ALTER TABLE jobs ADD COLUMN package_text TEXT DEFAULT ''")
+        except sqlite3.OperationalError as exc:
+            if "duplicate column name" not in str(exc).lower():
+                raise
     if "application_url" not in job_columns:
         try:
             c.execute("ALTER TABLE jobs ADD COLUMN application_url TEXT DEFAULT ''")
@@ -159,14 +172,14 @@ def init_db():
     if c.execute("SELECT COUNT(*) FROM jobs").fetchone()[0] == 0:
         now = datetime.utcnow().isoformat()
         jobs = [
-            ("Senior Frontend Engineer","Vercel","$150k",95,"active",'["JavaScript","React","CSS"]',"3+ yrs","Build next-gen web UIs","https://vercel.com/careers",now),
-            ("Data Scientist","OpenAI","$180k",88,"active",'["Python","ML","Statistics"]',"2+ yrs","Work on cutting-edge AI models","https://openai.com/careers",now),
-            ("Backend Engineer","Stripe","$160k",82,"active",'["Python","Go","SQL"]',"4+ yrs","Design payment infrastructure","https://stripe.com/jobs",now),
-            ("Product Designer","Figma","$140k",78,"active",'["Figma","UI/UX","Prototyping"]',"2+ yrs","Shape the future of design tools","https://www.figma.com/careers/",now),
-            ("ML Engineer","DeepMind","$200k",92,"active",'["Python","TensorFlow","Research"]',"3+ yrs","Push boundaries of AI research","https://deepmind.google/about/careers/",now),
-            ("DevOps Lead","Netflix","$170k",75,"active",'["AWS","Kubernetes","Terraform"]',"5+ yrs","Scale global streaming infra","https://jobs.netflix.com/",now),
+            ("Senior Frontend Engineer","Vercel","$150k",95,"active",'["JavaScript","React","CSS"]',"3+ yrs","Build next-gen web UIs","Remote","15-18 LPA","https://vercel.com/careers",now),
+            ("Data Scientist","OpenAI","$180k",88,"active",'["Python","ML","Statistics"]',"2+ yrs","Work on cutting-edge AI models","San Francisco, CA","22-28 LPA","https://openai.com/careers",now),
+            ("Backend Engineer","Stripe","$160k",82,"active",'["Python","Go","SQL"]',"4+ yrs","Design payment infrastructure","Bengaluru","18-24 LPA","https://stripe.com/jobs",now),
+            ("Product Designer","Figma","$140k",78,"active",'["Figma","UI/UX","Prototyping"]',"2+ yrs","Shape the future of design tools","London","14-18 LPA","https://www.figma.com/careers/",now),
+            ("ML Engineer","DeepMind","$200k",92,"active",'["Python","TensorFlow","Research"]',"3+ yrs","Push boundaries of AI research","Mountain View, CA","25-32 LPA","https://deepmind.google/about/careers/",now),
+            ("DevOps Lead","Netflix","$170k",75,"active",'["AWS","Kubernetes","Terraform"]',"5+ yrs","Scale global streaming infra","Remote","20-26 LPA","https://jobs.netflix.com/",now),
         ]
-        c.executemany("INSERT INTO jobs (title,company,salary,match_pct,status,skills,experience,description,application_url,created_at) VALUES (?,?,?,?,?,?,?,?,?,?)", jobs)
+        c.executemany("INSERT INTO jobs (title,company,salary,match_pct,status,skills,experience,description,location,package_text,application_url,created_at) VALUES (?,?,?,?,?,?,?,?,?,?,?,?)", jobs)
     if c.execute("SELECT COUNT(*) FROM workflows").fetchone()[0] == 0:
         now = datetime.utcnow().isoformat()
         wfs = [
@@ -346,6 +359,8 @@ def build_match_payload(user_row: sqlite3.Row, job_row: sqlite3.Row, match_score
             "title": job_row["title"],
             "company": job_row["company"],
             "salary": job_row["salary"],
+            "location": job_row["location"],
+            "package_text": job_row["package_text"],
             "experience": job_row["experience"],
             "description": job_row["description"],
             "application_url": job_row["application_url"],
@@ -499,13 +514,13 @@ async def get_jobs():
     return [dict(r) for r in rows]
 
 @app.post("/api/jobs")
-async def create_job(request: Request, title: str = Form(...), company: str = Form(...), salary: str = Form(""), skills: str = Form("[]"), experience: str = Form(""), description: str = Form(""), application_url: str = Form("")):
+async def create_job(request: Request, title: str = Form(...), company: str = Form(...), salary: str = Form(""), skills: str = Form("[]"), experience: str = Form(""), description: str = Form(""), location: str = Form(""), package_text: str = Form(""), application_url: str = Form("")):
     require_roles(request, {"recruiter"})
     conn = get_db()
     cursor = conn.cursor()
     cursor.execute(
-        "INSERT INTO jobs (title,company,salary,skills,experience,description,application_url,created_at) VALUES (?,?,?,?,?,?,?,?)",
-        (title, company, salary, skills, experience, description, application_url, datetime.utcnow().isoformat())
+        "INSERT INTO jobs (title,company,salary,skills,experience,description,location,package_text,application_url,created_at) VALUES (?,?,?,?,?,?,?,?,?,?)",
+        (title, company, salary, skills, experience, description, location, package_text, application_url, datetime.utcnow().isoformat())
     )
     job_id = cursor.lastrowid
     notification_result = notify_matches_for_job(conn, job_id)
@@ -592,6 +607,68 @@ async def get_workflows(request: Request):
     rows = conn.execute("SELECT * FROM workflows").fetchall()
     conn.close()
     return [dict(r) for r in rows]
+
+
+@app.get("/api/recruiter/dashboard")
+async def recruiter_dashboard(request: Request, job_id: int | None = None):
+    require_roles(request, {"recruiter"})
+    conn = get_db()
+    jobs = [dict(row) for row in conn.execute("SELECT * FROM jobs ORDER BY created_at DESC, id DESC").fetchall()]
+    if not jobs:
+        conn.close()
+        return {
+            "jobs": [],
+            "selected_job": None,
+            "candidates": [],
+            "summary": {"total_jobs": 0, "total_candidates": 0, "shortlisted": 0, "avg_ats": 0},
+        }
+
+    selected_job = next((job for job in jobs if job["id"] == job_id), jobs[0] if jobs else None)
+    job_skills = normalize_skill_terms(selected_job["skills"] or "[]")
+    candidate_rows = conn.execute("SELECT * FROM users WHERE role='candidate'").fetchall()
+
+    ranked_candidates = []
+    for candidate in candidate_rows:
+        profile = get_user_match_profile(conn, candidate)
+        match_score = calculate_job_match(job_skills, profile)
+        potential_score = round((match_score * 0.7) + (profile["ats_score"] * 0.3), 1)
+        ranked_candidates.append({
+            "id": candidate["id"],
+            "name": candidate["name"],
+            "email": candidate["email"],
+            "ats_score": profile["ats_score"],
+            "match_score": match_score,
+            "potential_score": potential_score,
+            "skills": profile["skills"][:8],
+            "shared_skills": sorted(set(profile["skills"]) & job_skills),
+        })
+
+    ranked_candidates.sort(key=lambda item: (-item["ats_score"], -item["match_score"], item["name"].lower()))
+    top_candidates = ranked_candidates[:10]
+    high_potential_low_ats = sorted(
+        [
+            candidate for candidate in ranked_candidates
+            if candidate["match_score"] >= 60 and candidate["ats_score"] < 75
+        ],
+        key=lambda item: (-item["match_score"], -item["potential_score"], item["name"].lower())
+    )[:10]
+    shortlisted = [candidate for candidate in ranked_candidates if candidate["ats_score"] >= 80]
+    avg_ats = round(sum(candidate["ats_score"] for candidate in ranked_candidates) / len(ranked_candidates), 1) if ranked_candidates else 0
+
+    conn.close()
+    return {
+        "jobs": jobs,
+        "selected_job": selected_job,
+        "candidates": ranked_candidates,
+        "top_candidates": top_candidates,
+        "high_potential_low_ats": high_potential_low_ats,
+        "summary": {
+            "total_jobs": len(jobs),
+            "total_candidates": len(ranked_candidates),
+            "shortlisted": len(shortlisted),
+            "avg_ats": avg_ats,
+        },
+    }
 
 # ── Analytics ────────────────────────────────────────────────────────
 @app.get("/api/analytics/summary")

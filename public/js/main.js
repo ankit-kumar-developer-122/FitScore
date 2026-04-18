@@ -7,9 +7,11 @@ document.addEventListener('DOMContentLoaded', () => {
     let analyticsReady = false;
     let dashboardChartsReady = false;
     let dbData = null;
+    let recruiterData = null;
     let jobsAbortController = null;
     let resumesAbortController = null;
     let dbAbortController = null;
+    let recruiterAbortController = null;
 
     const user = JSON.parse(localStorage.getItem('fitscore_user') || 'null');
     const isRecruiter = user && user.role === 'recruiter';
@@ -29,6 +31,14 @@ document.addEventListener('DOMContentLoaded', () => {
     const jobsGrid = document.getElementById('jobs-grid');
     const jobCreateForm = document.getElementById('job-create-form');
     const jobCreateStatus = document.getElementById('job-create-status');
+    const recruiterJobSelect = document.getElementById('recruiter-job-select');
+    const recruiterJobDetails = document.getElementById('recruiter-job-details');
+    const recruiterCandidatesTable = document.getElementById('recruiter-candidates-table');
+    const recruiterHighPotentialTable = document.getElementById('recruiter-high-potential-table');
+    const recruiterTotalJobs = document.getElementById('recruiter-total-jobs');
+    const recruiterTotalCandidates = document.getElementById('recruiter-total-candidates');
+    const recruiterShortlisted = document.getElementById('recruiter-shortlisted');
+    const recruiterAvgAts = document.getElementById('recruiter-avg-ats');
     const resumeTimeline = document.getElementById('resume-timeline');
     const dbTabBar = document.getElementById('db-tab-bar');
     const dbTableCard = document.getElementById('db-table-card');
@@ -311,6 +321,179 @@ document.addEventListener('DOMContentLoaded', () => {
         }
     }
 
+    function renderRecruiterSummary(summary) {
+        if (recruiterTotalJobs) recruiterTotalJobs.textContent = String(summary.total_jobs ?? 0);
+        if (recruiterTotalCandidates) recruiterTotalCandidates.textContent = String(summary.total_candidates ?? 0);
+        if (recruiterShortlisted) recruiterShortlisted.textContent = String(summary.shortlisted ?? 0);
+        if (recruiterAvgAts) recruiterAvgAts.textContent = formatScore(summary.avg_ats ?? 0);
+    }
+
+    function renderRecruiterJobDetails(job) {
+        if (!recruiterJobDetails) return;
+        if (!job) {
+            recruiterJobDetails.innerHTML = '<div class="empty-state text-sm" style="padding:1rem 0">No job selected.</div>';
+            return;
+        }
+
+        const skills = normalizeSkills(job.skills);
+        recruiterJobDetails.innerHTML = `
+            <div class="detail-stack">
+                <span class="detail-label">Role</span>
+                <span class="detail-value">${escapeHtml(job.title)} at ${escapeHtml(job.company)}</span>
+            </div>
+            <div class="grid-2">
+                <div class="detail-stack">
+                    <span class="detail-label">Package</span>
+                    <span class="detail-value">${escapeHtml(job.package_text || job.salary || 'Not specified')}</span>
+                </div>
+                <div class="detail-stack">
+                    <span class="detail-label">Location</span>
+                    <span class="detail-value">${escapeHtml(job.location || 'Not specified')}</span>
+                </div>
+            </div>
+            <div class="grid-2">
+                <div class="detail-stack">
+                    <span class="detail-label">Experience</span>
+                    <span class="detail-value">${escapeHtml(job.experience || 'Not specified')}</span>
+                </div>
+                <div class="detail-stack">
+                    <span class="detail-label">Apply Link</span>
+                    <span class="detail-value">${job.application_url ? `<a href="${escapeHtml(job.application_url)}" target="_blank" rel="noopener noreferrer">Open application</a>` : 'Not available'}</span>
+                </div>
+            </div>
+            <div class="detail-stack">
+                <span class="detail-label">Description</span>
+                <span class="detail-value">${escapeHtml(job.description || 'No description provided.')}</span>
+            </div>
+            <div class="detail-stack">
+                <span class="detail-label">Skills</span>
+                <div class="chip-group">${skills.map((skill) => `<span class="chip matched">${escapeHtml(skill)}</span>`).join('')}</div>
+            </div>
+        `;
+    }
+
+    function getShortlistBadgeClass(score) {
+        if ((Number(score) || 0) >= 80) return 'green';
+        if ((Number(score) || 0) >= 65) return 'blue';
+        return 'amber';
+    }
+
+    function renderRecruiterCandidates(candidates) {
+        if (!recruiterCandidatesTable) return;
+        if (!Array.isArray(candidates) || !candidates.length) {
+            recruiterCandidatesTable.innerHTML = '<div class="empty-state text-sm" style="padding:1rem 0">No top candidates available for this job yet.</div>';
+            return;
+        }
+
+        recruiterCandidatesTable.innerHTML = `
+            <div style="overflow-x:auto">
+                <table class="data-table">
+                    <thead>
+                        <tr>
+                            <th>#</th>
+                            <th>Name</th>
+                            <th>ATS</th>
+                            <th>Match</th>
+                            <th>Shared Skills</th>
+                            <th>Email</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        ${candidates.map((candidate, index) => `
+                            <tr>
+                                <td class="rank-num">${index + 1}</td>
+                                <td>${escapeHtml(candidate.name)}</td>
+                                <td><span class="badge ${getShortlistBadgeClass(candidate.ats_score)}">${escapeHtml(candidate.ats_score)}</span></td>
+                                <td>${escapeHtml(candidate.match_score)}%</td>
+                                <td>${escapeHtml((candidate.shared_skills || []).join(', ') || 'No direct overlap')}</td>
+                                <td>${escapeHtml(candidate.email)}</td>
+                            </tr>
+                        `).join('')}
+                    </tbody>
+                </table>
+            </div>
+        `;
+    }
+
+    function renderRecruiterHighPotential(candidates) {
+        if (!recruiterHighPotentialTable) return;
+        if (!Array.isArray(candidates) || !candidates.length) {
+            recruiterHighPotentialTable.innerHTML = '<div class="empty-state text-sm" style="padding:1rem 0">No high-potential low-ATS candidates found for this job yet.</div>';
+            return;
+        }
+
+        recruiterHighPotentialTable.innerHTML = `
+            <div style="overflow-x:auto">
+                <table class="data-table">
+                    <thead>
+                        <tr>
+                            <th>#</th>
+                            <th>Name</th>
+                            <th>ATS</th>
+                            <th>Match</th>
+                            <th>Potential</th>
+                            <th>Shared Skills</th>
+                            <th>Email</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        ${candidates.map((candidate, index) => `
+                            <tr>
+                                <td class="rank-num">${index + 1}</td>
+                                <td>${escapeHtml(candidate.name)}</td>
+                                <td><span class="badge ${getShortlistBadgeClass(candidate.ats_score)}">${escapeHtml(candidate.ats_score)}</span></td>
+                                <td>${escapeHtml(candidate.match_score)}%</td>
+                                <td><span class="badge ${getShortlistBadgeClass(candidate.potential_score)}">${escapeHtml(candidate.potential_score)}</span></td>
+                                <td>${escapeHtml((candidate.shared_skills || []).join(', ') || 'No direct overlap')}</td>
+                                <td>${escapeHtml(candidate.email)}</td>
+                            </tr>
+                        `).join('')}
+                    </tbody>
+                </table>
+            </div>
+        `;
+    }
+
+    function renderRecruiterDashboard(data) {
+        recruiterData = data;
+        if (recruiterJobSelect) {
+            recruiterJobSelect.innerHTML = (data.jobs || [])
+                .map((job) => `<option value="${job.id}" ${data.selected_job && job.id === data.selected_job.id ? 'selected' : ''}>${escapeHtml(job.title)} · ${escapeHtml(job.company)}</option>`)
+                .join('');
+        }
+        renderRecruiterSummary({
+            ...(data.summary || {}),
+            shortlisted: Array.isArray(data.top_candidates) ? data.top_candidates.length : 0,
+        });
+        renderRecruiterJobDetails(data.selected_job);
+        renderRecruiterCandidates(data.top_candidates || []);
+        renderRecruiterHighPotential(data.high_potential_low_ats || []);
+    }
+
+    async function loadRecruiterDashboard(jobId = '') {
+        if (!isRecruiter) return;
+        if (recruiterAbortController) recruiterAbortController.abort();
+        recruiterAbortController = new AbortController();
+        const query = jobId ? `?job_id=${encodeURIComponent(jobId)}` : '';
+
+        try {
+            const res = await fetch(getApiUrl(`/api/recruiter/dashboard${query}`), {
+                signal: recruiterAbortController.signal,
+                headers: getAuthHeaders(),
+            });
+            if (!res.ok) {
+                throw new Error(res.status === 403 ? 'Recruiter access required.' : `Could not load recruiter dashboard (${res.status})`);
+            }
+            const data = await res.json();
+            renderRecruiterDashboard(data);
+        } catch (error) {
+            if (error.name === 'AbortError') return;
+            if (recruiterJobDetails) recruiterJobDetails.innerHTML = `<div class="empty-state text-sm" style="padding:1rem 0">${escapeHtml(error.message || 'Could not load recruiter dashboard.')}</div>`;
+            if (recruiterCandidatesTable) recruiterCandidatesTable.innerHTML = '<div class="empty-state text-sm" style="padding:1rem 0">Candidate ranking is unavailable.</div>';
+            if (recruiterHighPotentialTable) recruiterHighPotentialTable.innerHTML = '<div class="empty-state text-sm" style="padding:1rem 0">High-potential suggestions are unavailable.</div>';
+        }
+    }
+
     async function createJob(event) {
         event.preventDefault();
         if (!jobCreateForm || !jobCreateStatus) return;
@@ -348,6 +531,7 @@ document.addEventListener('DOMContentLoaded', () => {
             jobsLoaded = false;
             await loadJobs();
             jobsLoaded = true;
+            await loadRecruiterDashboard(data.job_id);
         } catch (error) {
             jobCreateStatus.innerHTML = `<span class="text-red">${escapeHtml(error.message || 'Could not create job.')}</span>`;
         }
@@ -541,6 +725,9 @@ document.addEventListener('DOMContentLoaded', () => {
         if (name === 'database') {
             await loadDbTables();
         }
+        if (name === 'recruiter') {
+            await loadRecruiterDashboard(recruiterJobSelect && recruiterJobSelect.value ? recruiterJobSelect.value : '');
+        }
     }
 
     if (user) {
@@ -631,6 +818,12 @@ document.addEventListener('DOMContentLoaded', () => {
 
     if (jobCreateForm) {
         jobCreateForm.addEventListener('submit', createJob);
+    }
+
+    if (recruiterJobSelect) {
+        recruiterJobSelect.addEventListener('change', () => {
+            loadRecruiterDashboard(recruiterJobSelect.value);
+        });
     }
 
     renderEmptyResumeAnalysis();

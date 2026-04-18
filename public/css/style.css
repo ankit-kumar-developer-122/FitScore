@@ -421,7 +421,8 @@ body.light .bg-orb { opacity: 0.12; }
 }
 
 .job-field input,
-.job-field textarea {
+.job-field textarea,
+.job-field select {
   width: 100%;
   padding: 0.8rem 0.95rem;
   background: var(--bg-input);
@@ -438,7 +439,8 @@ body.light .bg-orb { opacity: 0.12; }
 }
 
 .job-field input:focus,
-.job-field textarea:focus {
+.job-field textarea:focus,
+.job-field select:focus {
   border-color: var(--blue);
   box-shadow: 0 0 0 3px rgba(0, 97, 255, 0.12);
 }
@@ -455,6 +457,36 @@ body.light .bg-orb { opacity: 0.12; }
 .job-form-actions {
   display: flex;
   justify-content: flex-start;
+}
+
+.detail-stack {
+  display: flex;
+  flex-direction: column;
+  gap: 0.35rem;
+}
+
+.detail-label {
+  font-size: 0.78rem;
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+  color: var(--text-3);
+}
+
+.detail-value {
+  font-size: 0.95rem;
+  color: var(--text-1);
+}
+
+.shortlist-meta {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.5rem;
+  align-items: center;
+}
+
+.shortlist-note {
+  font-size: 0.82rem;
+  color: var(--text-3);
 }
 
 /* ── Resume version timeline ──────────────────────────────────── */

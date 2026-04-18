@@ -166,12 +166,20 @@
                                 <input id="job-salary" name="salary" type="text" placeholder="$160k - $190k">
                             </div>
                             <div class="job-field">
+                                <label for="job-package-text">Package</label>
+                                <input id="job-package-text" name="package_text" type="text" placeholder="18-24 LPA">
+                            </div>
+                            <div class="job-field">
                                 <label for="job-experience">Experience</label>
                                 <input id="job-experience" name="experience" type="text" placeholder="3+ years">
                             </div>
                             <div class="job-field job-field-wide">
                                 <label for="job-skills">Skills</label>
                                 <input id="job-skills" name="skills" type="text" placeholder="Python, FastAPI, SQL, Docker" required>
+                            </div>
+                            <div class="job-field job-field-wide">
+                                <label for="job-location">Location</label>
+                                <input id="job-location" name="location" type="text" placeholder="Bengaluru / Remote">
                             </div>
                             <div class="job-field job-field-wide">
                                 <label for="job-application-url">Application URL</label>
@@ -292,36 +300,48 @@
                 <!-- ═══ RECRUITER ═══ -->
                 <section class="page" id="page-recruiter">
                     <h1 class="page-title">Recruiter Panel</h1>
-                    <p class="page-sub">Manage hiring pipelines and rank candidates.</p>
+                    <p class="page-sub">Manage hiring pipelines, auto-shortlist top talent, and surface high-potential candidates who need resume support.</p>
                     <div class="grid-4 mb-1">
-                        <div class="card"><div class="card-label">Total Applicants</div><div class="card-value">324</div></div>
-                        <div class="card"><div class="card-label">Shortlisted</div><div class="card-value text-green">47</div></div>
-                        <div class="card"><div class="card-label">Rejected</div><div class="card-value text-red">198</div></div>
-                        <div class="card"><div class="card-label">Avg Time-to-Hire</div><div class="card-value">14d</div></div>
+                        <div class="card"><div class="card-label">Open Jobs</div><div class="card-value" id="recruiter-total-jobs">0</div></div>
+                        <div class="card"><div class="card-label">Candidates Ranked</div><div class="card-value" id="recruiter-total-candidates">0</div></div>
+                        <div class="card"><div class="card-label">Top 10 Shortlisted</div><div class="card-value text-green" id="recruiter-shortlisted">0</div></div>
+                        <div class="card"><div class="card-label">Avg ATS</div><div class="card-value text-blue" id="recruiter-avg-ats">00</div></div>
+                    </div>
+                    <div class="card mb-1">
+                        <div class="flex-between mb-1">
+                            <div>
+                                <h3 class="section-title" style="margin-bottom:4px">Job Ranking View</h3>
+                                <p class="text-sm text-muted">Select a job to review description, package, location, top 10 candidates, and high-potential profiles with lower ATS scores.</p>
+                            </div>
+                        </div>
+                        <div class="job-field" style="max-width:420px">
+                            <label for="recruiter-job-select">Choose Job</label>
+                            <select id="recruiter-job-select"></select>
+                        </div>
                     </div>
                     <div class="grid-2 mt-1">
                         <div class="card">
-                            <h3 class="section-title">Hiring Funnel</h3>
-                            <div class="funnel">
-                                <div class="funnel-stage"><span class="stage-label">Applied</span><div class="funnel-bar" style="width:100%"></div><span class="stage-val">324</span></div>
-                                <div class="funnel-stage"><span class="stage-label">Screened</span><div class="funnel-bar" style="width:62%"></div><span class="stage-val">201</span></div>
-                                <div class="funnel-stage"><span class="stage-label">Interview</span><div class="funnel-bar" style="width:30%"></div><span class="stage-val">98</span></div>
-                                <div class="funnel-stage"><span class="stage-label">Selected</span><div class="funnel-bar" style="width:14%"></div><span class="stage-val">47</span></div>
-                                <div class="funnel-stage"><span class="stage-label">Hired</span><div class="funnel-bar" style="width:6%"></div><span class="stage-val">19</span></div>
+                            <h3 class="section-title">Job Description</h3>
+                            <div id="recruiter-job-details" class="gap-row" style="gap:0.85rem">
+                                <div class="empty-state text-sm" style="padding:1rem 0">No job selected.</div>
                             </div>
                         </div>
                         <div class="card">
-                            <h3 class="section-title">Top Candidates</h3>
-                            <table class="data-table">
-                                <thead><tr><th>#</th><th>Name</th><th>FitScore</th><th>ATS</th><th></th></tr></thead>
-                                <tbody>
-                                    <tr><td class="rank-num">1</td><td>Priya Sharma</td><td><span class="badge green">95</span></td><td>88</td><td><button class="btn btn-ghost btn-sm">View</button></td></tr>
-                                    <tr><td class="rank-num">2</td><td>James Chen</td><td><span class="badge green">91</span></td><td>94</td><td><button class="btn btn-ghost btn-sm">View</button></td></tr>
-                                    <tr><td class="rank-num">3</td><td>Anya Petrov</td><td><span class="badge blue">87</span></td><td>85</td><td><button class="btn btn-ghost btn-sm">View</button></td></tr>
-                                    <tr><td class="rank-num">4</td><td>Marcus Lee</td><td><span class="badge amber">78</span></td><td>82</td><td><button class="btn btn-ghost btn-sm">View</button></td></tr>
-                                    <tr><td class="rank-num">5</td><td>Sara Kim</td><td><span class="badge amber">74</span></td><td>79</td><td><button class="btn btn-ghost btn-sm">View</button></td></tr>
-                                </tbody>
-                            </table>
+                            <h3 class="section-title">Top 10 Candidates</h3>
+                            <div id="recruiter-candidates-table">
+                                <div class="empty-state text-sm" style="padding:1rem 0">Select a job to view ranked candidates.</div>
+                            </div>
+                        </div>
+                    </div>
+                    <div class="card mt-1">
+                        <div class="flex-between mb-1">
+                            <div>
+                                <h3 class="section-title" style="margin-bottom:4px">High Potential but Low ATS Score</h3>
+                                <p class="text-sm text-muted">Candidates with strong role match who may be overlooked because their resume formatting or keyword depth is still weak.</p>
+                            </div>
+                        </div>
+                        <div id="recruiter-high-potential-table">
+                            <div class="empty-state text-sm" style="padding:1rem 0">Select a job to view hidden-potential candidates.</div>
                         </div>
                     </div>
                 </section>
