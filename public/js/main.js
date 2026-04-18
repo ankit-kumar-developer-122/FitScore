@@ -12,6 +12,7 @@ document.addEventListener('DOMContentLoaded', () => {
     let dbAbortController = null;
 
     const user = JSON.parse(localStorage.getItem('fitscore_user') || 'null');
+    const isRecruiter = user && user.role === 'recruiter';
     const navItems = document.querySelectorAll('.nav-item[data-page]');
     const pages = document.querySelectorAll('.page');
     const sidebar = document.getElementById('sidebar');
@@ -40,6 +41,10 @@ document.addEventListener('DOMContentLoaded', () => {
     function getApiUrl(path) {
         const baseUrl = ((window.FITSCORE_CONFIG && window.FITSCORE_CONFIG.apiBaseUrl) || '').trim().replace(/\/+$/, '');
         return baseUrl ? `${baseUrl}${path}` : path;
+    }
+
+    function getAuthHeaders() {
+        return user && user.id ? { 'X-User-Id': user.id } : {};
     }
 
     function loadScriptOnce(src) {
@@ -309,6 +314,10 @@ document.addEventListener('DOMContentLoaded', () => {
     async function createJob(event) {
         event.preventDefault();
         if (!jobCreateForm || !jobCreateStatus) return;
+        if (!isRecruiter) {
+            jobCreateStatus.innerHTML = '<span class="text-red">Only recruiter accounts can create jobs.</span>';
+            return;
+        }
 
         const formData = new FormData(jobCreateForm);
         const skills = String(formData.get('skills') || '')
@@ -322,6 +331,7 @@ document.addEventListener('DOMContentLoaded', () => {
         try {
             const res = await fetch(getApiUrl('/api/jobs'), {
                 method: 'POST',
+                headers: getAuthHeaders(),
                 body: formData,
             });
             const data = await res.json().catch(() => ({}));
@@ -455,11 +465,18 @@ document.addEventListener('DOMContentLoaded', () => {
 
     async function loadDbTables() {
         if (!dbTabBar || !dbTableCard || dbData) return;
+        if (!isRecruiter) {
+            dbTableCard.innerHTML = '<div class="empty-state"><i class="ph ph-lock"></i><p>Recruiter access required.</p></div>';
+            return;
+        }
         if (dbAbortController) dbAbortController.abort();
         dbAbortController = new AbortController();
 
         try {
-            const res = await fetch(getApiUrl('/api/db/tables'), { signal: dbAbortController.signal });
+            const res = await fetch(getApiUrl('/api/db/tables'), { signal: dbAbortController.signal, headers: getAuthHeaders() });
+            if (!res.ok) {
+                throw new Error(res.status === 403 ? 'Recruiter access required.' : `Could not load tables (${res.status})`);
+            }
             dbData = await res.json();
             const names = Object.keys(dbData);
 
@@ -480,7 +497,7 @@ document.addEventListener('DOMContentLoaded', () => {
             if (names.length) renderTable(names[0]);
         } catch (error) {
             if (error.name === 'AbortError') return;
-            dbTableCard.innerHTML = '<div class="empty-state"><i class="ph ph-warning"></i><p>Could not load tables.</p></div>';
+            dbTableCard.innerHTML = `<div class="empty-state"><i class="ph ph-warning"></i><p>${escapeHtml(error.message || 'Could not load tables.')}</p></div>`;
         }
     }
 
@@ -535,6 +552,16 @@ document.addEventListener('DOMContentLoaded', () => {
         if (emailEl) emailEl.textContent = user.email || '';
     }
 
+    if (!isRecruiter) {
+        document.querySelectorAll('.nav-item[data-page="recruiter"], .nav-item[data-page="database"]').forEach((item) => {
+            item.style.display = 'none';
+        });
+        if (jobCreateForm) {
+            const jobCard = jobCreateForm.closest('.card');
+            if (jobCard) jobCard.style.display = 'none';
+        }
+    }
+
     const savedTheme = localStorage.getItem('fitscore_theme');
     setTheme(savedTheme !== 'light');
 
@@ -571,7 +598,7 @@ document.addEventListener('DOMContentLoaded', () => {
     if (autoEmailToggle && user) {
         autoEmailToggle.addEventListener('click', async () => {
             try {
-                const res = await fetch(getApiUrl(`/api/users/${user.id}/toggle-email`), { method: 'POST' });
+                const res = await fetch(getApiUrl(`/api/users/${user.id}/toggle-email`), { method: 'POST', headers: getAuthHeaders() });
                 const data = await res.json();
                 autoEmailToggle.classList.toggle('on', data.auto_email);
             } catch {

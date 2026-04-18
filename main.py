@@ -1,4 +1,4 @@
-from fastapi import FastAPI, UploadFile, File, Form, HTTPException
+from fastapi import FastAPI, UploadFile, File, Form, HTTPException, Request
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.staticfiles import StaticFiles
 from fastapi.responses import FileResponse, JSONResponse
@@ -55,6 +55,25 @@ def get_db():
     conn = sqlite3.connect(DB_PATH)
     conn.row_factory = sqlite3.Row
     return conn
+
+
+def get_request_user(request: Request) -> sqlite3.Row:
+    user_id = (request.headers.get("X-User-Id") or "").strip()
+    if not user_id:
+        raise HTTPException(401, "Authentication required")
+    conn = get_db()
+    user = conn.execute("SELECT * FROM users WHERE id=?", (user_id,)).fetchone()
+    conn.close()
+    if not user:
+        raise HTTPException(401, "User not found")
+    return user
+
+
+def require_roles(request: Request, allowed_roles: set[str]) -> sqlite3.Row:
+    user = get_request_user(request)
+    if user["role"] not in allowed_roles:
+        raise HTTPException(403, "You do not have permission to perform this action")
+    return user
 
 def init_db():
     conn = get_db()
@@ -376,7 +395,7 @@ def notify_matches_for_job(conn: sqlite3.Connection, job_id: int, auto_email_onl
 
     for user_row in user_rows:
         prior = conn.execute(
-            "SELECT 1 FROM notification_logs WHERE user_id=? AND job_id=? AND channel='n8n_email'",
+            "SELECT 1 FROM notification_logs WHERE user_id=? AND job_id=? AND channel='n8n_email' AND status='sent'",
             (user_row["id"], job_id)
         ).fetchone()
         if prior:
@@ -391,7 +410,14 @@ def notify_matches_for_job(conn: sqlite3.Connection, job_id: int, auto_email_onl
         payload = build_match_payload(user_row, job_row, match_score, user_profile)
         ok, message = send_n8n_webhook(payload)
         conn.execute(
-            "INSERT OR IGNORE INTO notification_logs (user_id, job_id, channel, status, payload_json, created_at) VALUES (?,?,?,?,?,?)",
+            """
+            INSERT INTO notification_logs (user_id, job_id, channel, status, payload_json, created_at)
+            VALUES (?,?,?,?,?,?)
+            ON CONFLICT(user_id, job_id, channel) DO UPDATE SET
+                status=excluded.status,
+                payload_json=excluded.payload_json,
+                created_at=excluded.created_at
+            """,
             (
                 user_row["id"],
                 job_id,
@@ -473,7 +499,8 @@ async def get_jobs():
     return [dict(r) for r in rows]
 
 @app.post("/api/jobs")
-async def create_job(title: str = Form(...), company: str = Form(...), salary: str = Form(""), skills: str = Form("[]"), experience: str = Form(""), description: str = Form(""), application_url: str = Form("")):
+async def create_job(request: Request, title: str = Form(...), company: str = Form(...), salary: str = Form(""), skills: str = Form("[]"), experience: str = Form(""), description: str = Form(""), application_url: str = Form("")):
+    require_roles(request, {"recruiter"})
     conn = get_db()
     cursor = conn.cursor()
     cursor.execute(
@@ -549,7 +576,8 @@ async def apply_job(user_id: str = Form(...), job_id: int = Form(...)):
 
 
 @app.post("/api/automation/match-and-notify")
-async def match_and_notify(job_id: int = Form(...), auto_email_only: int = Form(1)):
+async def match_and_notify(request: Request, job_id: int = Form(...), auto_email_only: int = Form(1)):
+    require_roles(request, {"recruiter"})
     conn = get_db()
     result = notify_matches_for_job(conn, job_id, auto_email_only=bool(auto_email_only))
     conn.commit()
@@ -558,7 +586,8 @@ async def match_and_notify(job_id: int = Form(...), auto_email_only: int = Form(
 
 # ── Workflows ────────────────────────────────────────────────────────
 @app.get("/api/workflows")
-async def get_workflows():
+async def get_workflows(request: Request):
+    require_roles(request, {"recruiter"})
     conn = get_db()
     rows = conn.execute("SELECT * FROM workflows").fetchall()
     conn.close()
@@ -582,7 +611,8 @@ async def health_check():
 
 # ── DB Tables (admin view) ──────────────────────────────────────────
 @app.get("/api/db/tables")
-async def db_tables():
+async def db_tables(request: Request):
+    require_roles(request, {"recruiter"})
     conn = get_db()
     tables = conn.execute("SELECT name FROM sqlite_master WHERE type='table'").fetchall()
     result = {}
