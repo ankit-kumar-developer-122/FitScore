@@ -1,13 +1,12 @@
 document.addEventListener('DOMContentLoaded', () => {
     const resourceCache = new Map();
     const chartInstances = [];
-    let drawflowStylesLoaded = false;
-    let drawflowReady = false;
     let jobsLoaded = false;
     let analyticsReady = false;
     let dashboardChartsReady = false;
     let dbData = null;
     let recruiterData = null;
+    let latestResumeId = null;
     let jobsAbortController = null;
     let resumesAbortController = null;
     let dbAbortController = null;
@@ -21,7 +20,9 @@ document.addEventListener('DOMContentLoaded', () => {
     const collapseBtn = document.getElementById('collapse-btn');
     const themeBtn = document.getElementById('theme-btn');
     const darkToggle = document.getElementById('dark-mode-toggle');
-    const autoEmailToggle = document.getElementById('auto-email-toggle');
+    const jobNotificationToggle = document.getElementById('job-notification-toggle');
+    const jobNotificationStatus = document.getElementById('job-notification-status');
+    const settingsAutoEmail = document.getElementById('settings-auto-email');
     const logoutBtn = document.getElementById('logout-btn');
     const settingsLogout = document.getElementById('settings-logout');
     const uploadZone = document.getElementById('upload-zone');
@@ -47,6 +48,10 @@ document.addEventListener('DOMContentLoaded', () => {
     const resumeScoreRing = document.getElementById('resume-ats-ring');
     const resumeScoreValue = document.getElementById('resume-ats-score');
     const suggestionsContainer = document.getElementById('resume-suggestions');
+    const referenceResumeBtn = document.getElementById('reference-resume-btn');
+    const referenceResumeStatus = document.getElementById('reference-resume-status');
+    const referenceResumeForm = document.getElementById('reference-resume-form');
+    const referenceResumeDownload = document.getElementById('reference-resume-download');
 
     function getApiUrl(path) {
         const baseUrl = ((window.FITSCORE_CONFIG && window.FITSCORE_CONFIG.apiBaseUrl) || '').trim().replace(/\/+$/, '');
@@ -172,6 +177,122 @@ document.addEventListener('DOMContentLoaded', () => {
         if (darkToggle) darkToggle.classList.toggle('on', dark);
         localStorage.setItem('fitscore_theme', dark ? 'dark' : 'light');
         updateChartTheme();
+    }
+
+    function setJobNotificationState(enabled) {
+        [jobNotificationToggle, settingsAutoEmail].forEach((toggle) => {
+            if (!toggle) return;
+            toggle.classList.toggle('on', enabled);
+            toggle.setAttribute('aria-checked', String(enabled));
+        });
+        if (jobNotificationStatus) {
+            jobNotificationStatus.textContent = enabled
+                ? 'Automation is on. Matched job emails will be sent when new roles are posted.'
+                : 'Notifications are off. Turn automation on to receive matched job emails.';
+            jobNotificationStatus.className = `text-sm ${enabled ? 'text-green' : 'text-muted'}`;
+        }
+        if (user) {
+            user.auto_email = enabled ? 1 : 0;
+            localStorage.setItem('fitscore_user', JSON.stringify(user));
+        }
+    }
+
+    function renderReferenceSuggestions(suggestions) {
+        if (!referenceResumeStatus) return;
+        if (!Array.isArray(suggestions) || !suggestions.length) return;
+        referenceResumeStatus.innerHTML = suggestions
+            .map((suggestion) => `<div class="flex-center text-sm"><i class="ph ph-check-circle text-green"></i> ${escapeHtml(suggestion)}</div>`)
+            .join('');
+    }
+
+    function renderMissingFields(fields) {
+        if (!referenceResumeForm) return;
+        referenceResumeForm.hidden = false;
+        referenceResumeForm.innerHTML = `
+            <div class="text-sm text-muted">Add the missing details, then generate the download.</div>
+            ${fields.map((field) => `
+                <div class="job-field">
+                    <label for="missing-${escapeHtml(field.key)}">${escapeHtml(field.label)}</label>
+                    <textarea id="missing-${escapeHtml(field.key)}" name="${escapeHtml(field.key)}" rows="${['education', 'projects', 'technical_skills'].includes(field.key) ? 3 : 1}" placeholder="${escapeHtml(field.placeholder || '')}" required></textarea>
+                </div>
+            `).join('')}
+            <button type="submit" class="btn btn-primary btn-sm"><i class="ph ph-download-simple"></i> Generate Download</button>
+        `;
+    }
+
+    async function makeReferenceResume(event) {
+        if (event) event.preventDefault();
+        if (!referenceResumeStatus || !referenceResumeDownload) return;
+        if (!latestResumeId) {
+            referenceResumeStatus.innerHTML = '<span class="text-red">Upload a resume before generating a reference-style version.</span>';
+            return;
+        }
+
+        const missing = {};
+        if (referenceResumeForm && !referenceResumeForm.hidden) {
+            new FormData(referenceResumeForm).forEach((value, key) => {
+                missing[key] = value;
+            });
+        }
+
+        const fd = new FormData();
+        fd.append('missing_json', JSON.stringify(missing));
+        referenceResumeStatus.innerHTML = '<span class="text-blue">Checking details and building the reference-style resume...</span>';
+        referenceResumeDownload.innerHTML = '';
+
+        try {
+            const res = await fetch(getApiUrl(`/api/resumes/${latestResumeId}/make-like-reference`), {
+                method: 'POST',
+                body: fd,
+            });
+            const data = await res.json().catch(() => ({}));
+            if (!res.ok) {
+                throw new Error(data.detail || data.message || `Could not generate resume (${res.status})`);
+            }
+            renderReferenceSuggestions(data.suggestions || []);
+            if (data.requires_input) {
+                renderMissingFields(data.missing_fields || []);
+                return;
+            }
+            if (referenceResumeForm) {
+                referenceResumeForm.hidden = true;
+                referenceResumeForm.innerHTML = '';
+            }
+            const href = getApiUrl(data.download_url);
+            referenceResumeDownload.innerHTML = `<a class="btn btn-outline btn-sm" href="${escapeHtml(href)}" download><i class="ph ph-download-simple"></i> Download Resume</a>`;
+        } catch (error) {
+            referenceResumeStatus.innerHTML = `<span class="text-red">${escapeHtml(error.message || 'Could not generate reference-style resume.')}</span>`;
+        }
+    }
+
+    async function toggleJobNotifications() {
+        if (!user) {
+            if (jobNotificationStatus) {
+                jobNotificationStatus.textContent = 'Sign in to turn on job notifications.';
+                jobNotificationStatus.className = 'text-sm text-red';
+            }
+            return;
+        }
+
+        const previousState = Boolean(user.auto_email);
+        setJobNotificationState(!previousState);
+        try {
+            const res = await fetch(getApiUrl(`/api/users/${user.id}/toggle-email`), {
+                method: 'POST',
+                headers: getAuthHeaders(),
+            });
+            const data = await res.json().catch(() => ({}));
+            if (!res.ok) {
+                throw new Error(data.detail || data.message || `Could not update notifications (${res.status})`);
+            }
+            setJobNotificationState(Boolean(data.auto_email));
+        } catch (error) {
+            setJobNotificationState(previousState);
+            if (jobNotificationStatus) {
+                jobNotificationStatus.textContent = error.message || 'Could not update job notifications.';
+                jobNotificationStatus.className = 'text-sm text-red';
+            }
+        }
     }
 
     function logout() {
@@ -570,16 +691,27 @@ document.addEventListener('DOMContentLoaded', () => {
             const res = await fetch(getApiUrl(`/api/resumes/${uid}`), { signal: resumesAbortController.signal });
             const list = await res.json();
             if (!list.length) {
+                latestResumeId = null;
                 resumeTimeline.innerHTML = '<div class="empty-state text-sm">No resumes uploaded yet.</div>';
+                if (referenceResumeStatus) referenceResumeStatus.textContent = 'Upload a resume first.';
                 renderEmptyResumeAnalysis();
                 return;
             }
+            latestResumeId = list[0].id;
+            if (referenceResumeStatus) referenceResumeStatus.textContent = 'Ready to create a reference-style resume.';
             renderResumeAnalysis(list[0].analysis);
 
             resumeTimeline.innerHTML = list.map((resume) => `
                 <div class="timeline-item">
                     <div class="tl-date">${new Date(resume.uploaded_at).toLocaleDateString()}</div>
-                    <div class="tl-title">${escapeHtml(resume.filename)} <span class="badge blue" style="margin-left:6px">${escapeHtml(resume.version_tag)}</span> <span class="badge green" style="margin-left:6px">ATS ${escapeHtml(resume.ats_score ?? 0)}</span></div>
+                    <div class="tl-title">
+                        ${escapeHtml(resume.filename)}
+                        <span class="badge blue" style="margin-left:6px">${escapeHtml(resume.version_tag)}</span>
+                        <span class="badge green" style="margin-left:6px">ATS ${escapeHtml(resume.ats_score ?? 0)}</span>
+                        ${resume.version_tag === 'Reference Style'
+                            ? `<a class="badge amber" style="margin-left:6px" href="${escapeHtml(getApiUrl(`/api/resume-files/${resume.id}/download`))}" download>Download</a>`
+                            : ''}
+                    </div>
                 </div>
             `).join('');
         } catch (error) {
@@ -587,64 +719,6 @@ document.addEventListener('DOMContentLoaded', () => {
                 resumeTimeline.innerHTML = '<div class="empty-state text-sm">Could not load resumes.</div>';
             }
         }
-    }
-
-    async function initDrawflow() {
-        const el = document.getElementById('drawflow-canvas');
-        const panel = document.getElementById('props-panel');
-        if (!el || !panel) return;
-
-        if (!drawflowStylesLoaded) {
-            await loadStylesheetOnce('https://cdn.jsdelivr.net/gh/jerosoler/Drawflow/dist/drawflow.min.css');
-            drawflowStylesLoaded = true;
-        }
-        await loadScriptOnce('https://cdn.jsdelivr.net/gh/jerosoler/Drawflow/dist/drawflow.min.js');
-
-        const editor = new Drawflow(el);
-        editor.start();
-
-        const mkNode = (icon, label, sub, color) => `
-            <div style="padding:10px;display:flex;align-items:center;gap:8px">
-                <i class="ph ph-${icon}" style="color:${color};font-size:1.4rem"></i>
-                <div>
-                    <strong style="display:block;font-size:.85rem">${escapeHtml(label)}</strong>
-                    <span style="font-size:.72rem;color:#8b8b9e">${escapeHtml(sub)}</span>
-                </div>
-            </div>`;
-
-        editor.addNode('scraper', 0, 1, 80, 80, 'scraper', {}, mkNode('globe', 'LinkedIn Scraper', 'Active', '#10b981'));
-        editor.addNode('clean', 1, 1, 350, 60, 'clean', {}, mkNode('funnel', 'Data Cleaner', 'Ready', '#0061FF'));
-        editor.addNode('db', 1, 0, 620, 80, 'db', {}, mkNode('database', 'DB Store', 'Connected', '#f59e0b'));
-        editor.addConnection(1, 2, 'output_1', 'input_1');
-        editor.addConnection(2, 3, 'output_1', 'input_1');
-
-        let dragNode = null;
-        document.querySelectorAll('.palette-item').forEach((item) => {
-            item.addEventListener('dragstart', () => {
-                dragNode = item.dataset.node;
-            });
-        });
-
-        el.addEventListener('dragover', (event) => event.preventDefault());
-        el.addEventListener('drop', (event) => {
-            event.preventDefault();
-            if (!dragNode) return;
-            const rect = el.getBoundingClientRect();
-            editor.addNode(dragNode, 1, 1, event.clientX - rect.left, event.clientY - rect.top, dragNode, {}, mkNode('cube', dragNode, 'New', '#0061FF'));
-            dragNode = null;
-        });
-
-        editor.on('nodeSelected', (id) => {
-            panel.innerHTML = `
-                <h3 class="section-title">Node #${id}</h3>
-                <label class="text-sm text-muted" style="display:block;margin-bottom:4px">Name</label>
-                <input style="width:100%;padding:8px 10px;background:var(--bg-input);border:1px solid var(--border);border-radius:var(--r-md);color:var(--text-1);outline:none" value="Node ${id}">
-                <button class="btn btn-primary btn-sm mt-1" style="width:100%;justify-content:center">Save</button>`;
-        });
-
-        editor.on('nodeUnselected', () => {
-            panel.innerHTML = '<h3 class="section-title">Properties</h3><p class="text-muted text-sm">Select a node to configure.</p>';
-        });
     }
 
     async function loadDbTables() {
@@ -709,10 +783,6 @@ document.addEventListener('DOMContentLoaded', () => {
         if (name === 'dashboard' && !dashboardChartsReady) {
             await initDashboardCharts();
             dashboardChartsReady = true;
-        }
-        if (name === 'automation' && !drawflowReady) {
-            await initDrawflow();
-            drawflowReady = true;
         }
         if (name === 'jobs' && !jobsLoaded) {
             await loadJobs();
@@ -779,20 +849,20 @@ document.addEventListener('DOMContentLoaded', () => {
 
     document.querySelectorAll('.toggle').forEach((toggle) => {
         if (toggle.id === 'dark-mode-toggle') return;
+        if (toggle.id === 'job-notification-toggle' || toggle.id === 'settings-auto-email') return;
         toggle.addEventListener('click', () => toggle.classList.toggle('on'));
     });
 
-    if (autoEmailToggle && user) {
-        autoEmailToggle.addEventListener('click', async () => {
-            try {
-                const res = await fetch(getApiUrl(`/api/users/${user.id}/toggle-email`), { method: 'POST', headers: getAuthHeaders() });
-                const data = await res.json();
-                autoEmailToggle.classList.toggle('on', data.auto_email);
-            } catch {
-                // Keep the current state if the update fails.
-            }
+    setJobNotificationState(Boolean(user && user.auto_email));
+    [jobNotificationToggle, settingsAutoEmail].forEach((toggle) => {
+        if (!toggle) return;
+        toggle.addEventListener('click', toggleJobNotifications);
+        toggle.addEventListener('keydown', (event) => {
+            if (event.key !== 'Enter' && event.key !== ' ') return;
+            event.preventDefault();
+            toggleJobNotifications();
         });
-    }
+    });
 
     if (logoutBtn) logoutBtn.addEventListener('click', logout);
     if (settingsLogout) settingsLogout.addEventListener('click', logout);
@@ -818,6 +888,14 @@ document.addEventListener('DOMContentLoaded', () => {
 
     if (jobCreateForm) {
         jobCreateForm.addEventListener('submit', createJob);
+    }
+
+    if (referenceResumeBtn) {
+        referenceResumeBtn.addEventListener('click', makeReferenceResume);
+    }
+
+    if (referenceResumeForm) {
+        referenceResumeForm.addEventListener('submit', makeReferenceResume);
     }
 
     if (recruiterJobSelect) {

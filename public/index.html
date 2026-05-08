@@ -28,7 +28,6 @@
                 <li class="nav-item active" data-page="dashboard"><i class="ph ph-squares-four"></i><span class="nav-label">Dashboard</span></li>
                 <li class="nav-item" data-page="jobs"><i class="ph ph-briefcase"></i><span class="nav-label">Job Feed</span></li>
                 <li class="nav-item" data-page="resume"><i class="ph ph-file-text"></i><span class="nav-label">Resume Lab</span></li>
-                <li class="nav-item" data-page="automation"><i class="ph ph-git-merge"></i><span class="nav-label">Automation</span></li>
             </ul>
 
             <div class="nav-section-title">Insights</div>
@@ -139,9 +138,17 @@
                             <h1 class="page-title">Smart Job Feed</h1>
                             <p class="page-sub" style="margin:0">Jobs matched to your profile and skills.</p>
                         </div>
+                    </div>
+                    <div class="notification-setup mb-1">
+                        <div class="notification-icon"><i class="ph ph-bell-ringing"></i></div>
+                        <div class="notification-copy">
+                            <h3>Job notifications</h3>
+                            <p>Turn this on to receive matched job emails when recruiters post relevant roles.</p>
+                            <div id="job-notification-status" class="text-sm text-muted">Notifications are off.</div>
+                        </div>
                         <div class="toggle-wrap">
-                            <span class="toggle-label">Auto-email jobs</span>
-                            <div class="toggle" id="auto-email-toggle"></div>
+                            <span class="toggle-label">Automation</span>
+                            <div class="toggle" id="job-notification-toggle" role="switch" aria-checked="false" tabindex="0"></div>
                         </div>
                     </div>
                     <div class="card mb-1">
@@ -242,35 +249,17 @@
                                     <div class="flex-center text-sm"><i class="ph ph-info text-blue"></i> We will analyze keywords, sections, metrics, and action verbs.</div>
                                 </div>
                             </div>
-                        </div>
-                    </div>
-                </section>
-
-                <!-- ═══ AUTOMATION HUB ═══ -->
-                <section class="page" id="page-automation">
-                    <div class="flex-between mb-1">
-                        <div>
-                            <h1 class="page-title">Automation Hub</h1>
-                            <p class="page-sub" style="margin:0">Visual workflow builder for recruitment pipelines.</p>
-                        </div>
-                        <div class="flex-center">
-                            <button class="btn btn-outline btn-sm"><i class="ph ph-play"></i> Run All</button>
-                            <button class="btn btn-primary btn-sm"><i class="ph ph-plus"></i> New Workflow</button>
-                        </div>
-                    </div>
-                    <div class="automation-layout">
-                        <div class="node-palette">
-                            <div class="palette-title">Components</div>
-                            <div class="palette-item" draggable="true" data-node="scraper"><i class="ph ph-globe"></i><span>Job Scraper</span></div>
-                            <div class="palette-item" draggable="true" data-node="api"><i class="ph ph-plugs-connected"></i><span>API Fetch</span></div>
-                            <div class="palette-item" draggable="true" data-node="ai"><i class="ph ph-brain"></i><span>AI Analyzer</span></div>
-                            <div class="palette-item" draggable="true" data-node="db"><i class="ph ph-database"></i><span>DB Store</span></div>
-                            <div class="palette-item" draggable="true" data-node="email"><i class="ph ph-envelope-simple"></i><span>Email Notify</span></div>
-                        </div>
-                        <div class="canvas-wrap" id="drawflow-canvas"></div>
-                        <div class="props-panel" id="props-panel">
-                            <h3 class="section-title">Properties</h3>
-                            <p class="text-muted text-sm">Select a node to configure.</p>
+                            <div class="card">
+                                <div class="flex-between mb-1">
+                                    <h3 class="section-title" style="margin:0">Match Reference Resume</h3>
+                                    <span class="badge blue">DOCX</span>
+                                </div>
+                                <p class="text-sm text-muted mb-1">Restructure the uploaded resume to follow Ankit Kumar's resume format, keep the candidate's details, and ask for missing fields.</p>
+                                <button class="btn btn-primary btn-sm" id="reference-resume-btn"><i class="ph ph-magic-wand"></i> Make Like Reference</button>
+                                <div id="reference-resume-status" class="text-sm text-muted mt-1">Upload a resume first.</div>
+                                <form id="reference-resume-form" class="missing-fields-form mt-1" hidden></form>
+                                <div id="reference-resume-download" class="mt-1"></div>
+                            </div>
                         </div>
                     </div>
                 </section>

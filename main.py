@@ -9,6 +9,8 @@ from urllib.error import URLError, HTTPError
 
 from pypdf import PdfReader
 from docx import Document
+from docx.enum.text import WD_ALIGN_PARAGRAPH
+from docx.shared import Pt
 
 app = FastAPI(title="FitScore API")
 
@@ -44,6 +46,7 @@ class CachedStaticFiles(StaticFiles):
 os.makedirs("public/css", exist_ok=True)
 os.makedirs("public/js", exist_ok=True)
 os.makedirs("uploads", exist_ok=True)
+os.makedirs("uploads/generated", exist_ok=True)
 
 # ── Database Setup ───────────────────────────────────────────────────
 DB_PATH = "fitscore.db"
@@ -205,6 +208,13 @@ COMMON_KEYWORDS = {
     "ci/cd", "git", "api", "machine learning", "data", "fastapi", "testing"
 }
 
+REFERENCE_RESUME_SECTIONS = [
+    "Education",
+    "Competitive Programming & DSA",
+    "Projects",
+    "Technical Skills",
+]
+
 SECTION_PATTERNS = {
     "contact": r"(email|phone|linkedin|github)",
     "summary": r"(summary|profile|objective)",
@@ -302,6 +312,193 @@ def analyze_resume_text(text: str) -> dict:
         "action_verbs_found": action_verbs_found,
         "suggestions": suggestions[:5],
     }
+
+
+def clean_resume_lines(text: str) -> list[str]:
+    return [line.strip() for line in text.splitlines() if line.strip()]
+
+
+def extract_contact_profile(text: str) -> dict:
+    lines = clean_resume_lines(text)
+    email_match = re.search(r"[\w.+-]+@[\w-]+\.[\w.-]+", text)
+    phone_match = re.search(r"(\+\d{1,3}[\s-]?)?(\d[\s-]?){10,}", text)
+    linkedin_match = re.search(r"(?:https?://)?(?:www\.)?linkedin\.com/[^\s|,;]+", text, re.I)
+    github_match = re.search(r"(?:https?://)?(?:www\.)?github\.com/[^\s|,;]+", text, re.I)
+    name = lines[0] if lines else ""
+    if email_match and name == email_match.group(0):
+        name = ""
+    return {
+        "name": name,
+        "phone": phone_match.group(0).strip() if phone_match else "",
+        "email": email_match.group(0).strip() if email_match else "",
+        "linkedin": linkedin_match.group(0).strip() if linkedin_match else "",
+        "github": github_match.group(0).strip() if github_match else "",
+    }
+
+
+def section_text_between(text: str, start_pattern: str, end_patterns: list[str]) -> str:
+    match = re.search(start_pattern, text, re.I)
+    if not match:
+        return ""
+    start = match.end()
+    end = len(text)
+    for pattern in end_patterns:
+        next_match = re.search(pattern, text[start:], re.I)
+        if next_match:
+            end = min(end, start + next_match.start())
+    return text[start:end].strip()
+
+
+def bullets_from_text(text: str, limit: int = 12) -> list[str]:
+    lines = clean_resume_lines(text)
+    bullets = []
+    for line in lines:
+        cleaned = re.sub(r"^[•\-\*\u2022]\s*", "", line).strip()
+        if not cleaned:
+            continue
+        if len(cleaned.split()) < 3 and ":" not in cleaned:
+            continue
+        bullets.append(cleaned)
+        if len(bullets) >= limit:
+            break
+    return bullets
+
+
+def split_list_field(value: str) -> list[str]:
+    return [item.strip() for item in re.split(r"[\n;]+", value or "") if item.strip()]
+
+
+def extract_reference_resume_data(text: str, overrides: dict | None = None) -> dict:
+    overrides = overrides or {}
+    profile = extract_contact_profile(text)
+    profile.update({key: str(value).strip() for key, value in overrides.items() if key in profile and str(value).strip()})
+
+    education_text = section_text_between(
+        text,
+        r"\bEducation\b",
+        [r"\bCompetitive Programming\b", r"\bProjects\b", r"\bTechnical Skills\b", r"\bExperience\b"],
+    )
+    competitive_text = section_text_between(
+        text,
+        r"\b(Competitive Programming|Coding Profiles|Achievements)\b",
+        [r"\bProjects\b", r"\bTechnical Skills\b", r"\bExperience\b"],
+    )
+    projects_text = section_text_between(
+        text,
+        r"\bProjects?\b",
+        [r"\bTechnical Skills\b", r"\bSkills\b", r"\bExperience\b", r"\bEducation\b"],
+    )
+    skills_text = section_text_between(
+        text,
+        r"\b(Technical Skills|Skills)\b",
+        [r"\bProjects?\b", r"\bExperience\b", r"\bEducation\b", r"\bCertifications?\b"],
+    )
+
+    data = {
+        **profile,
+        "education": bullets_from_text(education_text, 8),
+        "competitive_programming": bullets_from_text(competitive_text, 6),
+        "projects": bullets_from_text(projects_text, 12),
+        "technical_skills": bullets_from_text(skills_text, 10),
+    }
+
+    for key in ["education", "competitive_programming", "projects", "technical_skills"]:
+        if overrides.get(key):
+            data[key] = split_list_field(str(overrides[key]))
+
+    return data
+
+
+def missing_reference_fields(data: dict) -> list[dict]:
+    fields = [
+        ("name", "Full name", "Ankit Kumar"),
+        ("phone", "Phone", "+91 9876543210"),
+        ("email", "Email", "name@example.com"),
+        ("linkedin", "LinkedIn", "linkedin.com/in/username"),
+        ("github", "GitHub", "github.com/username"),
+        ("education", "Education", "College, degree, graduation year; Class XII; Class X"),
+        ("projects", "Projects", "Project name - short impact bullets; another project - bullets"),
+        ("technical_skills", "Technical skills", "Programming Languages: Python, C++; Tools: Git, Docker"),
+    ]
+    missing = []
+    for key, label, placeholder in fields:
+        value = data.get(key)
+        if not value:
+            missing.append({"key": key, "label": label, "placeholder": placeholder})
+    return missing
+
+
+def add_doc_heading(document: Document, text: str):
+    paragraph = document.add_paragraph()
+    run = paragraph.add_run(text)
+    run.bold = True
+    run.font.size = Pt(11)
+    paragraph.paragraph_format.space_before = Pt(8)
+    paragraph.paragraph_format.space_after = Pt(2)
+
+
+def add_doc_bullet(document: Document, text: str):
+    paragraph = document.add_paragraph(style="List Bullet")
+    paragraph.paragraph_format.space_after = Pt(1)
+    run = paragraph.add_run(text)
+    run.font.size = Pt(9)
+
+
+def build_reference_docx(data: dict, output_path: str):
+    document = Document()
+    section = document.sections[0]
+    section.top_margin = Pt(28)
+    section.bottom_margin = Pt(28)
+    section.left_margin = Pt(36)
+    section.right_margin = Pt(36)
+
+    styles = document.styles
+    styles["Normal"].font.name = "Calibri"
+    styles["Normal"].font.size = Pt(9)
+
+    title = document.add_paragraph()
+    title.alignment = WD_ALIGN_PARAGRAPH.CENTER
+    title_run = title.add_run(data.get("name", "Candidate Name"))
+    title_run.bold = True
+    title_run.font.size = Pt(16)
+
+    contact_parts = [data.get("phone"), data.get("email"), data.get("linkedin"), data.get("github")]
+    contact = document.add_paragraph(" | ".join(part for part in contact_parts if part))
+    contact.alignment = WD_ALIGN_PARAGRAPH.CENTER
+    contact.paragraph_format.space_after = Pt(6)
+
+    add_doc_heading(document, "Education")
+    for item in data.get("education", []):
+        add_doc_bullet(document, item)
+
+    if data.get("competitive_programming"):
+        add_doc_heading(document, "Competitive Programming & DSA")
+        for item in data["competitive_programming"]:
+            add_doc_bullet(document, item)
+
+    add_doc_heading(document, "Projects")
+    for item in data.get("projects", []):
+        add_doc_bullet(document, item)
+
+    add_doc_heading(document, "Technical Skills")
+    for item in data.get("technical_skills", []):
+        add_doc_bullet(document, item)
+
+    document.save(output_path)
+
+
+def reference_resume_suggestions(data: dict) -> list[str]:
+    suggestions = [
+        "Use a single centered name and contact line like the reference resume.",
+        "Keep sections in this order: Education, Competitive Programming & DSA, Projects, Technical Skills.",
+        "Convert long paragraphs into short impact bullets.",
+        "Group skills by category instead of listing one long comma-separated block.",
+    ]
+    if not data.get("competitive_programming"):
+        suggestions.append("Add coding profiles or DSA achievements if available; otherwise omit that section.")
+    if len(data.get("projects", [])) < 3:
+        suggestions.append("Add at least three projects with technology and outcome bullets to match the reference depth.")
+    return suggestions[:6]
 
 
 def normalize_skill_terms(raw_skills) -> set[str]:
@@ -571,6 +768,82 @@ async def get_resumes(user_id: str):
             item["analysis"] = {}
         resumes.append(item)
     return resumes
+
+
+@app.post("/api/resumes/{resume_id}/make-like-reference")
+async def make_resume_like_reference(resume_id: int, missing_json: str = Form("{}")):
+    conn = get_db()
+    resume = conn.execute("SELECT * FROM resumes WHERE id=?", (resume_id,)).fetchone()
+    conn.close()
+    if not resume:
+        raise HTTPException(404, "Resume not found")
+
+    filepath = resume["filepath"]
+    if not filepath or not os.path.exists(filepath):
+        raise HTTPException(404, "Uploaded resume file is missing")
+
+    try:
+        overrides = json.loads(missing_json or "{}")
+    except json.JSONDecodeError:
+        raise HTTPException(400, "Missing field data must be valid JSON")
+
+    ext = os.path.splitext(filepath)[1]
+    text = extract_resume_text(filepath, ext)
+    data = extract_reference_resume_data(text, overrides)
+    missing = missing_reference_fields(data)
+    suggestions = reference_resume_suggestions(data)
+
+    if missing:
+        return {
+            "requires_input": True,
+            "missing_fields": missing,
+            "suggestions": suggestions,
+        }
+
+    output_name = f"reference_resume_{resume_id}_{uuid.uuid4().hex[:8]}.docx"
+    output_path = os.path.join("uploads", "generated", output_name)
+    build_reference_docx(data, output_path)
+
+    analysis = analyze_resume_text(extract_resume_text(output_path, ".docx"))
+    conn = get_db()
+    cursor = conn.cursor()
+    cursor.execute(
+        "INSERT INTO resumes (user_id,filename,filepath,version_tag,ats_score,analysis_json,uploaded_at) VALUES (?,?,?,?,?,?,?)",
+        (
+            resume["user_id"],
+            output_name,
+            output_path,
+            "Reference Style",
+            analysis["ats_score"],
+            json.dumps(analysis),
+            datetime.utcnow().isoformat(),
+        )
+    )
+    generated_resume_id = cursor.lastrowid
+    conn.commit()
+    conn.close()
+
+    return {
+        "requires_input": False,
+        "download_url": f"/api/resume-files/{generated_resume_id}/download",
+        "filename": output_name,
+        "resume_id": generated_resume_id,
+        "suggestions": suggestions,
+    }
+
+
+@app.get("/api/resume-files/{resume_id}/download")
+async def download_resume_file(resume_id: int):
+    conn = get_db()
+    resume = conn.execute("SELECT filename, filepath FROM resumes WHERE id=?", (resume_id,)).fetchone()
+    conn.close()
+    if not resume or not resume["filepath"] or not os.path.exists(resume["filepath"]):
+        raise HTTPException(404, "Resume file not found")
+    return FileResponse(
+        resume["filepath"],
+        media_type="application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+        filename=resume["filename"],
+    )
 
 # ── Applications ─────────────────────────────────────────────────────
 @app.get("/api/applications")
