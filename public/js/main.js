@@ -6,6 +6,7 @@ document.addEventListener('DOMContentLoaded', () => {
     let dashboardChartsReady = false;
     let dbData = null;
     let recruiterData = null;
+    let latestResumeId = null;
     let jobsAbortController = null;
     let resumesAbortController = null;
     let dbAbortController = null;
@@ -47,6 +48,10 @@ document.addEventListener('DOMContentLoaded', () => {
     const resumeScoreRing = document.getElementById('resume-ats-ring');
     const resumeScoreValue = document.getElementById('resume-ats-score');
     const suggestionsContainer = document.getElementById('resume-suggestions');
+    const referenceResumeBtn = document.getElementById('reference-resume-btn');
+    const referenceResumeStatus = document.getElementById('reference-resume-status');
+    const referenceResumeForm = document.getElementById('reference-resume-form');
+    const referenceResumeDownload = document.getElementById('reference-resume-download');
 
     function getApiUrl(path) {
         const baseUrl = ((window.FITSCORE_CONFIG && window.FITSCORE_CONFIG.apiBaseUrl) || '').trim().replace(/\/+$/, '');
@@ -189,6 +194,74 @@ document.addEventListener('DOMContentLoaded', () => {
         if (user) {
             user.auto_email = enabled ? 1 : 0;
             localStorage.setItem('fitscore_user', JSON.stringify(user));
+        }
+    }
+
+    function renderReferenceSuggestions(suggestions) {
+        if (!referenceResumeStatus) return;
+        if (!Array.isArray(suggestions) || !suggestions.length) return;
+        referenceResumeStatus.innerHTML = suggestions
+            .map((suggestion) => `<div class="flex-center text-sm"><i class="ph ph-check-circle text-green"></i> ${escapeHtml(suggestion)}</div>`)
+            .join('');
+    }
+
+    function renderMissingFields(fields) {
+        if (!referenceResumeForm) return;
+        referenceResumeForm.hidden = false;
+        referenceResumeForm.innerHTML = `
+            <div class="text-sm text-muted">Add the missing details, then generate the download.</div>
+            ${fields.map((field) => `
+                <div class="job-field">
+                    <label for="missing-${escapeHtml(field.key)}">${escapeHtml(field.label)}</label>
+                    <textarea id="missing-${escapeHtml(field.key)}" name="${escapeHtml(field.key)}" rows="${['education', 'projects', 'technical_skills'].includes(field.key) ? 3 : 1}" placeholder="${escapeHtml(field.placeholder || '')}" required></textarea>
+                </div>
+            `).join('')}
+            <button type="submit" class="btn btn-primary btn-sm"><i class="ph ph-download-simple"></i> Generate Download</button>
+        `;
+    }
+
+    async function makeReferenceResume(event) {
+        if (event) event.preventDefault();
+        if (!referenceResumeStatus || !referenceResumeDownload) return;
+        if (!latestResumeId) {
+            referenceResumeStatus.innerHTML = '<span class="text-red">Upload a resume before generating a reference-style version.</span>';
+            return;
+        }
+
+        const missing = {};
+        if (referenceResumeForm && !referenceResumeForm.hidden) {
+            new FormData(referenceResumeForm).forEach((value, key) => {
+                missing[key] = value;
+            });
+        }
+
+        const fd = new FormData();
+        fd.append('missing_json', JSON.stringify(missing));
+        referenceResumeStatus.innerHTML = '<span class="text-blue">Checking details and building the reference-style resume...</span>';
+        referenceResumeDownload.innerHTML = '';
+
+        try {
+            const res = await fetch(getApiUrl(`/api/resumes/${latestResumeId}/make-like-reference`), {
+                method: 'POST',
+                body: fd,
+            });
+            const data = await res.json().catch(() => ({}));
+            if (!res.ok) {
+                throw new Error(data.detail || data.message || `Could not generate resume (${res.status})`);
+            }
+            renderReferenceSuggestions(data.suggestions || []);
+            if (data.requires_input) {
+                renderMissingFields(data.missing_fields || []);
+                return;
+            }
+            if (referenceResumeForm) {
+                referenceResumeForm.hidden = true;
+                referenceResumeForm.innerHTML = '';
+            }
+            const href = getApiUrl(data.download_url);
+            referenceResumeDownload.innerHTML = `<a class="btn btn-outline btn-sm" href="${escapeHtml(href)}" download><i class="ph ph-download-simple"></i> Download Resume</a>`;
+        } catch (error) {
+            referenceResumeStatus.innerHTML = `<span class="text-red">${escapeHtml(error.message || 'Could not generate reference-style resume.')}</span>`;
         }
     }
 
@@ -618,16 +691,27 @@ document.addEventListener('DOMContentLoaded', () => {
             const res = await fetch(getApiUrl(`/api/resumes/${uid}`), { signal: resumesAbortController.signal });
             const list = await res.json();
             if (!list.length) {
+                latestResumeId = null;
                 resumeTimeline.innerHTML = '<div class="empty-state text-sm">No resumes uploaded yet.</div>';
+                if (referenceResumeStatus) referenceResumeStatus.textContent = 'Upload a resume first.';
                 renderEmptyResumeAnalysis();
                 return;
             }
+            latestResumeId = list[0].id;
+            if (referenceResumeStatus) referenceResumeStatus.textContent = 'Ready to create a reference-style resume.';
             renderResumeAnalysis(list[0].analysis);
 
             resumeTimeline.innerHTML = list.map((resume) => `
                 <div class="timeline-item">
                     <div class="tl-date">${new Date(resume.uploaded_at).toLocaleDateString()}</div>
-                    <div class="tl-title">${escapeHtml(resume.filename)} <span class="badge blue" style="margin-left:6px">${escapeHtml(resume.version_tag)}</span> <span class="badge green" style="margin-left:6px">ATS ${escapeHtml(resume.ats_score ?? 0)}</span></div>
+                    <div class="tl-title">
+                        ${escapeHtml(resume.filename)}
+                        <span class="badge blue" style="margin-left:6px">${escapeHtml(resume.version_tag)}</span>
+                        <span class="badge green" style="margin-left:6px">ATS ${escapeHtml(resume.ats_score ?? 0)}</span>
+                        ${resume.version_tag === 'Reference Style'
+                            ? `<a class="badge amber" style="margin-left:6px" href="${escapeHtml(getApiUrl(`/api/resume-files/${resume.id}/download`))}" download>Download</a>`
+                            : ''}
+                    </div>
                 </div>
             `).join('');
         } catch (error) {
@@ -804,6 +888,14 @@ document.addEventListener('DOMContentLoaded', () => {
 
     if (jobCreateForm) {
         jobCreateForm.addEventListener('submit', createJob);
+    }
+
+    if (referenceResumeBtn) {
+        referenceResumeBtn.addEventListener('click', makeReferenceResume);
+    }
+
+    if (referenceResumeForm) {
+        referenceResumeForm.addEventListener('submit', makeReferenceResume);
     }
 
     if (recruiterJobSelect) {
