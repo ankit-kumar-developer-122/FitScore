@@ -489,6 +489,48 @@ body.light .bg-orb { opacity: 0.12; }
   color: var(--text-3);
 }
 
+.notification-setup {
+  display: flex;
+  align-items: center;
+  gap: 1rem;
+  background: var(--bg-card);
+  border: 1px solid var(--border);
+  border-radius: var(--r-lg);
+  padding: 1rem 1.25rem;
+}
+
+.notification-icon {
+  width: 44px;
+  height: 44px;
+  display: grid;
+  place-items: center;
+  flex-shrink: 0;
+  border-radius: var(--r-md);
+  background: var(--blue-subtle);
+  color: var(--blue);
+}
+
+.notification-icon i {
+  font-size: 1.45rem;
+}
+
+.notification-copy {
+  flex: 1;
+  min-width: 0;
+}
+
+.notification-copy h3 {
+  font-size: 1rem;
+  font-weight: 650;
+  margin-bottom: 0.25rem;
+}
+
+.notification-copy p {
+  color: var(--text-2);
+  font-size: 0.88rem;
+  margin-bottom: 0.35rem;
+}
+
 /* ── Resume version timeline ──────────────────────────────────── */
 .timeline { position: relative; padding-left: 24px; }
 .timeline::before {
@@ -524,46 +566,11 @@ body.light .bg-orb { opacity: 0.12; }
 }
 .empty-state i { font-size: 3rem; margin-bottom: 0.5rem; display: block; opacity: 0.5; }
 
-/* ── Drawflow Overrides ───────────────────────────────────────── */
-.automation-layout { display: flex; gap: 1rem; height: calc(100vh - 140px); }
-.node-palette { width: 220px; display: flex; flex-direction: column; gap: 6px; overflow-y: auto; }
-.palette-title { font-size: 0.7rem; text-transform: uppercase; letter-spacing: 1px; color: var(--text-3); padding: 0 4px; margin-bottom: 4px; }
-.palette-item {
-  display: flex; align-items: center; gap: 8px; padding: 10px 12px;
-  background: var(--bg-card); border: 1px solid var(--border);
-  border-radius: var(--r-md); cursor: grab; font-size: 0.85rem;
-  transition: all 0.15s;
-}
-.palette-item:hover { border-color: var(--blue); background: var(--blue-subtle); }
-.palette-item i { font-size: 1.15rem; color: var(--blue); }
-.canvas-wrap {
-  flex: 1; background: var(--bg-card); border: 1px solid var(--border);
-  border-radius: var(--r-lg); overflow: hidden; position: relative;
-}
-.props-panel {
-  width: 280px; background: var(--bg-card); border: 1px solid var(--border);
-  border-radius: var(--r-lg); padding: 1.25rem; overflow-y: auto;
-}
-
-.drawflow .drawflow-node {
-  background: var(--bg-raised) !important; border: 1px solid var(--border) !important;
-  border-radius: var(--r-md) !important; color: var(--text-1) !important;
-  box-shadow: var(--shadow-md) !important;
-}
-.drawflow .drawflow-node.selected {
-  border-color: var(--blue) !important;
-  box-shadow: 0 0 0 2px var(--blue-glow) !important;
-}
-.drawflow .connection .main-path {
-  stroke: var(--blue) !important; stroke-width: 2px !important;
-}
-
 /* ── Responsive ───────────────────────────────────────────────── */
 @media(max-width: 900px) {
   .sidebar { position: fixed; left: -280px; z-index: 100; height: 100vh; }
   .sidebar.open { left: 0; }
-  .automation-layout { flex-direction: column; height: auto; }
-  .node-palette, .props-panel { width: 100%; }
+  .notification-setup { align-items: flex-start; flex-direction: column; }
   .job-form-grid { grid-template-columns: 1fr; }
   .job-field-wide { grid-column: auto; }
 }
