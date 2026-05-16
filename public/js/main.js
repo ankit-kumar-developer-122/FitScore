@@ -7,6 +7,8 @@ document.addEventListener('DOMContentLoaded', () => {
     let dbData = null;
     let recruiterData = null;
     let latestResumeId = null;
+    let companies = [];
+    let selectedCompanyIds = new Set();
     let jobsAbortController = null;
     let resumesAbortController = null;
     let dbAbortController = null;
@@ -32,6 +34,14 @@ document.addEventListener('DOMContentLoaded', () => {
     const jobsGrid = document.getElementById('jobs-grid');
     const jobCreateForm = document.getElementById('job-create-form');
     const jobCreateStatus = document.getElementById('job-create-status');
+    const jobPreferencesForm = document.getElementById('job-preferences-form');
+    const jobPreferencesStatus = document.getElementById('job-preferences-status');
+    const companyPicker = document.getElementById('company-picker');
+    const companySearch = document.getElementById('company-search');
+    const salaryExpectation = document.getElementById('salary-expectation');
+    const preferredRoles = document.getElementById('preferred-roles');
+    const preferredLocations = document.getElementById('preferred-locations');
+    const refreshCareersBtn = document.getElementById('refresh-careers-btn');
     const recruiterJobSelect = document.getElementById('recruiter-job-select');
     const recruiterJobDetails = document.getElementById('recruiter-job-details');
     const recruiterCandidatesTable = document.getElementById('recruiter-candidates-table');
@@ -114,6 +124,122 @@ document.addEventListener('DOMContentLoaded', () => {
 
     function formatScore(score) {
         return String(Math.max(0, Number(score) || 0)).padStart(2, '0');
+    }
+
+    function renderCompanies(filter = '') {
+        if (!companyPicker) return;
+        const query = filter.trim().toLowerCase();
+        const visible = companies
+            .filter((company) => !query || company.name.toLowerCase().includes(query) || (company.domain || '').toLowerCase().includes(query))
+            .slice(0, 150);
+        if (!visible.length) {
+            companyPicker.innerHTML = '<div class="empty-state text-sm" style="padding:1rem 0">No companies match this search.</div>';
+            return;
+        }
+        companyPicker.innerHTML = visible.map((company) => `
+            <label class="company-choice" title="${escapeHtml(company.name)}">
+                <input type="checkbox" value="${escapeHtml(company.id)}" ${selectedCompanyIds.has(Number(company.id)) ? 'checked' : ''}>
+                <span>${escapeHtml(company.name)}</span>
+            </label>
+        `).join('');
+        companyPicker.querySelectorAll('input[type="checkbox"]').forEach((checkbox) => {
+            checkbox.addEventListener('change', () => {
+                const id = Number(checkbox.value);
+                if (checkbox.checked) selectedCompanyIds.add(id);
+                else selectedCompanyIds.delete(id);
+                if (jobPreferencesStatus) {
+                    jobPreferencesStatus.textContent = `${selectedCompanyIds.size} companies selected.`;
+                }
+            });
+        });
+    }
+
+    async function loadJobPreferences() {
+        if (!companyPicker) return;
+        try {
+            const [companiesRes, preferencesRes] = await Promise.all([
+                fetch(getApiUrl('/api/companies')),
+                user ? fetch(getApiUrl(`/api/users/${user.id}/job-preferences`), { headers: getAuthHeaders() }) : Promise.resolve(null),
+            ]);
+            companies = await companiesRes.json();
+            const preferences = preferencesRes ? await preferencesRes.json() : {};
+            selectedCompanyIds = new Set((preferences.company_ids || []).map(Number));
+            if (salaryExpectation) salaryExpectation.value = preferences.min_salary_lpa || '';
+            if (preferredRoles) preferredRoles.value = preferences.roles || '';
+            if (preferredLocations) preferredLocations.value = preferences.locations || '';
+            renderCompanies(companySearch ? companySearch.value : '');
+            if (jobPreferencesStatus) {
+                jobPreferencesStatus.textContent = selectedCompanyIds.size
+                    ? `${selectedCompanyIds.size} companies selected. Matching jobs and emails will follow these choices.`
+                    : 'Select companies to personalize jobs and emails.';
+            }
+        } catch (error) {
+            companyPicker.innerHTML = '<div class="empty-state text-sm" style="padding:1rem 0">Could not load company preferences.</div>';
+        }
+    }
+
+    async function saveJobPreferences(event) {
+        event.preventDefault();
+        if (!user || !jobPreferencesStatus) {
+            if (jobPreferencesStatus) jobPreferencesStatus.innerHTML = '<span class="text-red">Sign in to save job preferences.</span>';
+            return;
+        }
+        const fd = new FormData();
+        fd.append('company_ids', JSON.stringify([...selectedCompanyIds]));
+        fd.append('min_salary_lpa', salaryExpectation ? salaryExpectation.value || '0' : '0');
+        fd.append('roles', preferredRoles ? preferredRoles.value : '');
+        fd.append('locations', preferredLocations ? preferredLocations.value : '');
+        jobPreferencesStatus.innerHTML = '<span class="text-blue">Saving preferences...</span>';
+        try {
+            const res = await fetch(getApiUrl(`/api/users/${user.id}/job-preferences`), {
+                method: 'POST',
+                headers: getAuthHeaders(),
+                body: fd,
+            });
+            const data = await res.json().catch(() => ({}));
+            if (!res.ok) {
+                throw new Error(data.detail || data.message || `Could not save preferences (${res.status})`);
+            }
+            selectedCompanyIds = new Set((data.company_ids || []).map(Number));
+            jobPreferencesStatus.innerHTML = `<span class="text-green">Preferences saved.</span> <span class="text-muted">${selectedCompanyIds.size} companies, minimum ${escapeHtml(data.min_salary_lpa || 0)} LPA.</span>`;
+            jobsLoaded = false;
+            await loadJobs();
+            jobsLoaded = true;
+        } catch (error) {
+            jobPreferencesStatus.innerHTML = `<span class="text-red">${escapeHtml(error.message || 'Could not save preferences.')}</span>`;
+        }
+    }
+
+    async function refreshCareerJobs() {
+        if (!refreshCareersBtn || !jobPreferencesStatus) return;
+        if (!user) {
+            jobPreferencesStatus.innerHTML = '<span class="text-red">Sign in to refresh personalized career jobs.</span>';
+            return;
+        }
+        const fd = new FormData();
+        fd.append('company_ids', JSON.stringify([...selectedCompanyIds]));
+        fd.append('max_sources', String(selectedCompanyIds.size ? Math.min(selectedCompanyIds.size, 30) : 25));
+        refreshCareersBtn.disabled = true;
+        jobPreferencesStatus.innerHTML = '<span class="text-blue">Visiting career pages and job sources...</span>';
+        try {
+            const res = await fetch(getApiUrl('/api/jobs/refresh-careers'), {
+                method: 'POST',
+                headers: getAuthHeaders(),
+                body: fd,
+            });
+            const data = await res.json().catch(() => ({}));
+            if (!res.ok) {
+                throw new Error(data.detail || data.message || `Could not refresh jobs (${res.status})`);
+            }
+            jobPreferencesStatus.innerHTML = `<span class="text-green">Refresh complete.</span> <span class="text-muted">Checked ${escapeHtml(data.sources_checked || 0)} sources, found ${escapeHtml(data.jobs_found || 0)}, added ${escapeHtml(data.inserted || 0)} jobs, sent ${escapeHtml(data.notifications_sent || 0)} emails.</span>`;
+            jobsLoaded = false;
+            await loadJobs();
+            jobsLoaded = true;
+        } catch (error) {
+            jobPreferencesStatus.innerHTML = `<span class="text-red">${escapeHtml(error.message || 'Could not refresh jobs.')}</span>`;
+        } finally {
+            refreshCareersBtn.disabled = false;
+        }
     }
 
     function renderEmptyResumeAnalysis() {
@@ -407,7 +533,8 @@ document.addEventListener('DOMContentLoaded', () => {
         jobsAbortController = new AbortController();
 
         try {
-            const res = await fetch(getApiUrl('/api/jobs'), { signal: jobsAbortController.signal });
+            const query = user && user.id ? `?user_id=${encodeURIComponent(user.id)}` : '';
+            const res = await fetch(getApiUrl(`/api/jobs${query}`), { signal: jobsAbortController.signal });
             const jobs = (await res.json()).map((job) => ({
                 ...job,
                 skills_list: normalizeSkills(job.skills)
@@ -424,7 +551,8 @@ document.addEventListener('DOMContentLoaded', () => {
                     </div>
                     <h3 class="fw-600" style="margin-bottom:4px">${escapeHtml(job.title)}</h3>
                     <p class="text-sm text-muted flex-center" style="margin-bottom:10px"><i class="ph ph-buildings"></i> ${escapeHtml(job.company)}</p>
-                    <p class="fw-600" style="margin-bottom:12px">${escapeHtml(job.salary || '')}</p>
+                    <p class="fw-600" style="margin-bottom:12px">${escapeHtml(job.package_text || job.salary || 'Package not listed')}</p>
+                    <p class="text-sm text-muted" style="margin-bottom:10px"><i class="ph ph-map-pin"></i> ${escapeHtml(job.location || 'Flexible')} ${job.source_name ? `&middot; ${escapeHtml(job.source_name)}` : ''}</p>
                     <div class="chip-group" style="margin-bottom:14px">
                         ${job.skills_list.map((skill) => `<span class="chip">${escapeHtml(skill)}</span>`).join('')}
                     </div>
@@ -785,6 +913,7 @@ document.addEventListener('DOMContentLoaded', () => {
             dashboardChartsReady = true;
         }
         if (name === 'jobs' && !jobsLoaded) {
+            await loadJobPreferences();
             await loadJobs();
             jobsLoaded = true;
         }
@@ -888,6 +1017,18 @@ document.addEventListener('DOMContentLoaded', () => {
 
     if (jobCreateForm) {
         jobCreateForm.addEventListener('submit', createJob);
+    }
+
+    if (jobPreferencesForm) {
+        jobPreferencesForm.addEventListener('submit', saveJobPreferences);
+    }
+
+    if (companySearch) {
+        companySearch.addEventListener('input', () => renderCompanies(companySearch.value));
+    }
+
+    if (refreshCareersBtn) {
+        refreshCareersBtn.addEventListener('click', refreshCareerJobs);
     }
 
     if (referenceResumeBtn) {
