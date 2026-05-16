@@ -151,6 +151,40 @@
                             <div class="toggle" id="job-notification-toggle" role="switch" aria-checked="false" tabindex="0"></div>
                         </div>
                     </div>
+                    <div class="card mb-1" id="job-preferences-card">
+                        <div class="flex-between mb-1">
+                            <div>
+                                <h3 class="section-title" style="margin-bottom:4px">Company & Salary Preferences</h3>
+                                <p class="text-sm text-muted">Choose target companies, expected package, roles, and locations. Job emails and feed tiles will follow these choices.</p>
+                            </div>
+                            <button class="btn btn-outline btn-sm" id="refresh-careers-btn"><i class="ph ph-arrows-clockwise"></i> Refresh Jobs</button>
+                        </div>
+                        <form id="job-preferences-form" class="job-preferences-grid">
+                            <div class="job-field job-field-wide">
+                                <label for="company-search">Companies</label>
+                                <input id="company-search" type="text" placeholder="Search top companies">
+                            </div>
+                            <div class="job-field">
+                                <label for="salary-expectation">Minimum package (LPA)</label>
+                                <input id="salary-expectation" name="min_salary_lpa" type="number" min="0" step="1" placeholder="18">
+                            </div>
+                            <div class="job-field">
+                                <label for="preferred-roles">Roles</label>
+                                <input id="preferred-roles" name="roles" type="text" placeholder="backend, data, intern">
+                            </div>
+                            <div class="job-field job-field-wide">
+                                <label for="preferred-locations">Locations</label>
+                                <input id="preferred-locations" name="locations" type="text" placeholder="Bengaluru, Remote, Pune">
+                            </div>
+                            <div class="company-picker" id="company-picker">
+                                <div class="empty-state text-sm" style="padding:1rem 0">Loading company list...</div>
+                            </div>
+                            <div class="job-form-actions">
+                                <button type="submit" class="btn btn-primary"><i class="ph ph-floppy-disk"></i> Save Preferences</button>
+                            </div>
+                        </form>
+                        <div id="job-preferences-status" class="text-sm text-muted mt-1">Select companies to personalize jobs and emails.</div>
+                    </div>
                     <div class="card mb-1">
                         <div class="flex-between mb-1">
                             <div>

@@ -4,8 +4,10 @@ from fastapi.staticfiles import StaticFiles
 from fastapi.responses import FileResponse, JSONResponse
 import os, sqlite3, hashlib, uuid, json, re
 from datetime import datetime
+from html.parser import HTMLParser
 from urllib import request as urlrequest
 from urllib.error import URLError, HTTPError
+from urllib.parse import urljoin
 
 from pypdf import PdfReader
 from docx import Document
@@ -54,6 +56,157 @@ N8N_WEBHOOK_URL = os.getenv("N8N_WEBHOOK_URL", "").strip()
 N8N_WEBHOOK_SECRET = os.getenv("N8N_WEBHOOK_SECRET", "").strip()
 MATCH_THRESHOLD = int(os.getenv("JOB_MATCH_THRESHOLD", "60"))
 
+TOP_COMPANY_SEEDS = [
+    ("Google", "google.com", "https://www.google.com/about/careers/applications/"),
+    ("Microsoft", "microsoft.com", "https://jobs.careers.microsoft.com/"),
+    ("Amazon", "amazon.jobs", "https://www.amazon.jobs/"),
+    ("Apple", "apple.com", "https://jobs.apple.com/"),
+    ("Meta", "metacareers.com", "https://www.metacareers.com/jobs/"),
+    ("Netflix", "netflix.com", "https://jobs.netflix.com/"),
+    ("NVIDIA", "nvidia.com", "https://www.nvidia.com/en-us/about-nvidia/careers/"),
+    ("OpenAI", "openai.com", "https://openai.com/careers/"),
+    ("Anthropic", "anthropic.com", "https://www.anthropic.com/careers"),
+    ("DeepMind", "deepmind.google", "https://deepmind.google/about/careers/"),
+    ("Stripe", "stripe.com", "https://stripe.com/jobs"),
+    ("Databricks", "databricks.com", "https://www.databricks.com/company/careers"),
+    ("Snowflake", "snowflake.com", "https://careers.snowflake.com/"),
+    ("MongoDB", "mongodb.com", "https://www.mongodb.com/careers"),
+    ("Cloudflare", "cloudflare.com", "https://www.cloudflare.com/careers/jobs/"),
+    ("Salesforce", "salesforce.com", "https://careers.salesforce.com/"),
+    ("Adobe", "adobe.com", "https://careers.adobe.com/"),
+    ("ServiceNow", "servicenow.com", "https://careers.servicenow.com/"),
+    ("Atlassian", "atlassian.com", "https://www.atlassian.com/company/careers"),
+    ("Uber", "uber.com", "https://www.uber.com/us/en/careers/"),
+    ("Airbnb", "airbnb.com", "https://careers.airbnb.com/"),
+    ("LinkedIn", "linkedin.com", "https://careers.linkedin.com/"),
+    ("GitHub", "github.com", "https://github.com/about/careers"),
+    ("GitLab", "gitlab.com", "https://about.gitlab.com/jobs/"),
+    ("Figma", "figma.com", "https://www.figma.com/careers/"),
+    ("Canva", "canva.com", "https://www.canva.com/careers/"),
+    ("Shopify", "shopify.com", "https://www.shopify.com/careers"),
+    ("PayPal", "paypal.com", "https://careers.pypl.com/"),
+    ("Block", "block.xyz", "https://block.xyz/careers"),
+    ("Coinbase", "coinbase.com", "https://www.coinbase.com/careers"),
+    ("Robinhood", "robinhood.com", "https://careers.robinhood.com/"),
+    ("Rippling", "rippling.com", "https://www.rippling.com/careers"),
+    ("Brex", "brex.com", "https://www.brex.com/careers"),
+    ("Ramp", "ramp.com", "https://ramp.com/careers"),
+    ("Plaid", "plaid.com", "https://plaid.com/careers/"),
+    ("Twilio", "twilio.com", "https://www.twilio.com/en-us/company/jobs"),
+    ("Okta", "okta.com", "https://www.okta.com/company/careers/"),
+    ("Zoom", "zoom.us", "https://careers.zoom.us/"),
+    ("Slack", "salesforce.com", "https://slack.com/careers"),
+    ("Oracle", "oracle.com", "https://www.oracle.com/careers/"),
+    ("IBM", "ibm.com", "https://www.ibm.com/careers"),
+    ("Intel", "intel.com", "https://jobs.intel.com/"),
+    ("AMD", "amd.com", "https://www.amd.com/en/corporate/careers.html"),
+    ("Qualcomm", "qualcomm.com", "https://www.qualcomm.com/company/careers"),
+    ("Tesla", "tesla.com", "https://www.tesla.com/careers"),
+    ("SpaceX", "spacex.com", "https://www.spacex.com/careers/"),
+    ("Palantir", "palantir.com", "https://www.palantir.com/careers/"),
+    ("DoorDash", "doordash.com", "https://careers.doordash.com/"),
+    ("Instacart", "instacart.com", "https://www.instacart.com/company/careers"),
+    ("Pinterest", "pinterest.com", "https://www.pinterestcareers.com/"),
+    ("Reddit", "redditinc.com", "https://www.redditinc.com/careers"),
+    ("Discord", "discord.com", "https://discord.com/careers"),
+    ("Dropbox", "dropbox.com", "https://jobs.dropbox.com/"),
+    ("Box", "box.com", "https://careers.box.com/"),
+    ("Asana", "asana.com", "https://asana.com/jobs"),
+    ("Notion", "notion.so", "https://www.notion.so/careers"),
+    ("Airtable", "airtable.com", "https://www.airtable.com/careers"),
+    ("Miro", "miro.com", "https://miro.com/careers/"),
+    ("Grammarly", "grammarly.com", "https://www.grammarly.com/jobs"),
+    ("Duolingo", "duolingo.com", "https://careers.duolingo.com/"),
+    ("Coursera", "coursera.org", "https://www.coursera.org/careers"),
+    ("Khan Academy", "khanacademy.org", "https://www.khanacademy.org/careers"),
+    ("Workday", "workday.com", "https://workday.wd5.myworkdayjobs.com/Workday"),
+    ("SAP", "sap.com", "https://jobs.sap.com/"),
+    ("Cisco", "cisco.com", "https://jobs.cisco.com/"),
+    ("VMware", "broadcom.com", "https://www.broadcom.com/company/careers"),
+    ("Palo Alto Networks", "paloaltonetworks.com", "https://jobs.paloaltonetworks.com/"),
+    ("CrowdStrike", "crowdstrike.com", "https://www.crowdstrike.com/careers/"),
+    ("Zscaler", "zscaler.com", "https://www.zscaler.com/careers"),
+    ("Datadog", "datadoghq.com", "https://careers.datadoghq.com/"),
+    ("New Relic", "newrelic.com", "https://newrelic.com/careers"),
+    ("Elastic", "elastic.co", "https://www.elastic.co/careers"),
+    ("Confluent", "confluent.io", "https://www.confluent.io/careers/"),
+    ("HashiCorp", "hashicorp.com", "https://www.hashicorp.com/careers"),
+    ("DigitalOcean", "digitalocean.com", "https://www.digitalocean.com/careers"),
+    ("Vercel", "vercel.com", "https://vercel.com/careers"),
+    ("Netlify", "netlify.com", "https://www.netlify.com/careers/"),
+    ("Supabase", "supabase.com", "https://supabase.com/careers"),
+    ("PlanetScale", "planetscale.com", "https://planetscale.com/careers"),
+    ("Postman", "postman.com", "https://www.postman.com/company/careers/"),
+    ("Hugging Face", "huggingface.co", "https://huggingface.co/jobs"),
+    ("Scale AI", "scale.com", "https://scale.com/careers"),
+    ("Perplexity AI", "perplexity.ai", "https://www.perplexity.ai/hub/careers"),
+    ("Mistral AI", "mistral.ai", "https://mistral.ai/careers"),
+    ("Cohere", "cohere.com", "https://cohere.com/careers"),
+    ("Character.AI", "character.ai", "https://character.ai/careers"),
+    ("xAI", "x.ai", "https://x.ai/careers"),
+    ("TCS", "tcs.com", "https://www.tcs.com/careers"),
+    ("Infosys", "infosys.com", "https://www.infosys.com/careers/"),
+    ("Wipro", "wipro.com", "https://careers.wipro.com/"),
+    ("HCLTech", "hcltech.com", "https://www.hcltech.com/careers"),
+    ("Tech Mahindra", "techmahindra.com", "https://www.techmahindra.com/en-in/careers/"),
+    ("Accenture", "accenture.com", "https://www.accenture.com/us-en/careers"),
+    ("Deloitte", "deloitte.com", "https://www.deloitte.com/global/en/careers.html"),
+    ("EY", "ey.com", "https://www.ey.com/en_gl/careers"),
+    ("KPMG", "kpmg.com", "https://kpmg.com/xx/en/home/careers.html"),
+    ("PwC", "pwc.com", "https://www.pwc.com/gx/en/careers.html"),
+    ("JPMorgan Chase", "jpmorganchase.com", "https://careers.jpmorgan.com/"),
+    ("Goldman Sachs", "goldmansachs.com", "https://www.goldmansachs.com/careers/"),
+    ("Morgan Stanley", "morganstanley.com", "https://www.morganstanley.com/careers"),
+    ("Visa", "visa.com", "https://usa.visa.com/careers.html"),
+    ("Mastercard", "mastercard.com", "https://careers.mastercard.com/"),
+    ("American Express", "americanexpress.com", "https://www.americanexpress.com/en-us/careers/"),
+    ("Walmart Global Tech", "walmart.com", "https://tech.walmart.com/content/walmart-global-tech/en_us/careers.html"),
+    ("Target", "target.com", "https://jobs.target.com/"),
+    ("Intuit", "intuit.com", "https://www.intuit.com/careers/"),
+    ("Expedia Group", "expediagroup.com", "https://careers.expediagroup.com/"),
+    ("Booking.com", "booking.com", "https://careers.booking.com/"),
+    ("MakeMyTrip", "makemytrip.com", "https://careers.makemytrip.com/"),
+    ("Flipkart", "flipkartcareers.com", "https://www.flipkartcareers.com/"),
+    ("Myntra", "myntra.com", "https://www.myntra.com/careers"),
+    ("Meesho", "meesho.io", "https://www.meesho.io/careers"),
+    ("Swiggy", "swiggy.com", "https://careers.swiggy.com/"),
+    ("Zomato", "zomato.com", "https://www.zomato.com/careers"),
+    ("Zepto", "zeptonow.com", "https://www.zeptonow.com/careers"),
+    ("PhonePe", "phonepe.com", "https://www.phonepe.com/careers/"),
+    ("Razorpay", "razorpay.com", "https://razorpay.com/jobs/"),
+    ("Paytm", "paytm.com", "https://paytm.com/careers/"),
+    ("CRED", "cred.club", "https://careers.cred.club/"),
+    ("Groww", "groww.in", "https://groww.in/careers"),
+    ("Zerodha", "zerodha.com", "https://zerodha.com/careers/"),
+    ("Freshworks", "freshworks.com", "https://www.freshworks.com/company/careers/"),
+    ("Zoho", "zoho.com", "https://www.zoho.com/careers/"),
+    ("BrowserStack", "browserstack.com", "https://www.browserstack.com/careers"),
+    ("Chargebee", "chargebee.com", "https://www.chargebee.com/careers/"),
+    ("InMobi", "inmobi.com", "https://www.inmobi.com/company/careers/"),
+    ("Dream11", "dream11.com", "https://www.dream11.com/careers"),
+    ("ShareChat", "sharechat.com", "https://sharechat.com/careers"),
+    ("Ola", "olaelectric.com", "https://olaelectric.com/careers"),
+    ("OYO", "oyorooms.com", "https://www.oyorooms.com/careers/"),
+    ("Udaan", "udaan.com", "https://udaan.com/careers"),
+    ("Navi", "navi.com", "https://navi.com/careers"),
+    ("Pine Labs", "pinelabs.com", "https://www.pinelabs.com/careers"),
+    ("Urban Company", "urbancompany.com", "https://www.urbancompany.com/careers"),
+]
+
+JOB_PORTAL_SEEDS = [
+    ("Wellfound", "wellfound.com", "https://wellfound.com/jobs"),
+    ("Y Combinator Work at a Startup", "ycombinator.com", "https://www.ycombinator.com/jobs"),
+    ("Remote OK", "remoteok.com", "https://remoteok.com/remote-dev-jobs"),
+    ("Hacker News Who is Hiring", "news.ycombinator.com", "https://news.ycombinator.com/jobs"),
+]
+
+JOB_TITLE_KEYWORDS = [
+    "software engineer", "frontend", "backend", "full stack", "fullstack",
+    "data scientist", "data engineer", "machine learning", "ml engineer",
+    "ai engineer", "devops", "sre", "cloud engineer", "security engineer",
+    "android", "ios", "product designer", "product manager", "intern",
+]
+
 def get_db():
     conn = sqlite3.connect(DB_PATH)
     conn.row_factory = sqlite3.Row
@@ -101,7 +254,26 @@ def init_db():
         skills TEXT DEFAULT '[]', experience TEXT,
         description TEXT, location TEXT DEFAULT '',
         package_text TEXT DEFAULT '', application_url TEXT DEFAULT '',
+        source_name TEXT DEFAULT '', source_url TEXT DEFAULT '',
         created_at TEXT
+    );
+    CREATE TABLE IF NOT EXISTS company_watchlist (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        name TEXT UNIQUE NOT NULL,
+        domain TEXT DEFAULT '',
+        careers_url TEXT DEFAULT '',
+        package_tier TEXT DEFAULT 'high',
+        source_type TEXT DEFAULT 'company',
+        created_at TEXT
+    );
+    CREATE TABLE IF NOT EXISTS user_job_preferences (
+        user_id TEXT PRIMARY KEY,
+        company_ids TEXT DEFAULT '[]',
+        min_salary_lpa INTEGER DEFAULT 0,
+        roles TEXT DEFAULT '',
+        locations TEXT DEFAULT '',
+        updated_at TEXT,
+        FOREIGN KEY(user_id) REFERENCES users(id)
     );
     CREATE TABLE IF NOT EXISTS applications (
         id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -171,18 +343,44 @@ def init_db():
         except sqlite3.OperationalError as exc:
             if "duplicate column name" not in str(exc).lower():
                 raise
+    if "source_name" not in job_columns:
+        try:
+            c.execute("ALTER TABLE jobs ADD COLUMN source_name TEXT DEFAULT ''")
+        except sqlite3.OperationalError as exc:
+            if "duplicate column name" not in str(exc).lower():
+                raise
+    if "source_url" not in job_columns:
+        try:
+            c.execute("ALTER TABLE jobs ADD COLUMN source_url TEXT DEFAULT ''")
+        except sqlite3.OperationalError as exc:
+            if "duplicate column name" not in str(exc).lower():
+                raise
+    if c.execute("SELECT COUNT(*) FROM company_watchlist").fetchone()[0] == 0:
+        now = datetime.utcnow().isoformat()
+        company_rows = [
+            (name, domain, careers_url, "premium" if index < 80 else "high", "company", now)
+            for index, (name, domain, careers_url) in enumerate(TOP_COMPANY_SEEDS)
+        ]
+        portal_rows = [
+            (name, domain, url, "varied", "portal", now)
+            for name, domain, url in JOB_PORTAL_SEEDS
+        ]
+        c.executemany(
+            "INSERT OR IGNORE INTO company_watchlist (name,domain,careers_url,package_tier,source_type,created_at) VALUES (?,?,?,?,?,?)",
+            company_rows + portal_rows,
+        )
     # Seed data if empty
     if c.execute("SELECT COUNT(*) FROM jobs").fetchone()[0] == 0:
         now = datetime.utcnow().isoformat()
         jobs = [
-            ("Senior Frontend Engineer","Vercel","$150k",95,"active",'["JavaScript","React","CSS"]',"3+ yrs","Build next-gen web UIs","Remote","15-18 LPA","https://vercel.com/careers",now),
-            ("Data Scientist","OpenAI","$180k",88,"active",'["Python","ML","Statistics"]',"2+ yrs","Work on cutting-edge AI models","San Francisco, CA","22-28 LPA","https://openai.com/careers",now),
-            ("Backend Engineer","Stripe","$160k",82,"active",'["Python","Go","SQL"]',"4+ yrs","Design payment infrastructure","Bengaluru","18-24 LPA","https://stripe.com/jobs",now),
-            ("Product Designer","Figma","$140k",78,"active",'["Figma","UI/UX","Prototyping"]',"2+ yrs","Shape the future of design tools","London","14-18 LPA","https://www.figma.com/careers/",now),
-            ("ML Engineer","DeepMind","$200k",92,"active",'["Python","TensorFlow","Research"]',"3+ yrs","Push boundaries of AI research","Mountain View, CA","25-32 LPA","https://deepmind.google/about/careers/",now),
-            ("DevOps Lead","Netflix","$170k",75,"active",'["AWS","Kubernetes","Terraform"]',"5+ yrs","Scale global streaming infra","Remote","20-26 LPA","https://jobs.netflix.com/",now),
+            ("Senior Frontend Engineer","Vercel","$150k",95,"active",'["JavaScript","React","CSS"]',"3+ yrs","Build next-gen web UIs","Remote","15-18 LPA","https://vercel.com/careers","Vercel","https://vercel.com/careers",now),
+            ("Data Scientist","OpenAI","$180k",88,"active",'["Python","ML","Statistics"]',"2+ yrs","Work on cutting-edge AI models","San Francisco, CA","22-28 LPA","https://openai.com/careers","OpenAI","https://openai.com/careers",now),
+            ("Backend Engineer","Stripe","$160k",82,"active",'["Python","Go","SQL"]',"4+ yrs","Design payment infrastructure","Bengaluru","18-24 LPA","https://stripe.com/jobs","Stripe","https://stripe.com/jobs",now),
+            ("Product Designer","Figma","$140k",78,"active",'["Figma","UI/UX","Prototyping"]',"2+ yrs","Shape the future of design tools","London","14-18 LPA","https://www.figma.com/careers/","Figma","https://www.figma.com/careers/",now),
+            ("ML Engineer","DeepMind","$200k",92,"active",'["Python","TensorFlow","Research"]',"3+ yrs","Push boundaries of AI research","Mountain View, CA","25-32 LPA","https://deepmind.google/about/careers/","DeepMind","https://deepmind.google/about/careers/",now),
+            ("DevOps Lead","Netflix","$170k",75,"active",'["AWS","Kubernetes","Terraform"]',"5+ yrs","Scale global streaming infra","Remote","20-26 LPA","https://jobs.netflix.com/","Netflix","https://jobs.netflix.com/",now),
         ]
-        c.executemany("INSERT INTO jobs (title,company,salary,match_pct,status,skills,experience,description,location,package_text,application_url,created_at) VALUES (?,?,?,?,?,?,?,?,?,?,?,?)", jobs)
+        c.executemany("INSERT INTO jobs (title,company,salary,match_pct,status,skills,experience,description,location,package_text,application_url,source_name,source_url,created_at) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?)", jobs)
     if c.execute("SELECT COUNT(*) FROM workflows").fetchone()[0] == 0:
         now = datetime.utcnow().isoformat()
         wfs = [
@@ -512,6 +710,205 @@ def normalize_skill_terms(raw_skills) -> set[str]:
     return {str(skill).strip().lower() for skill in raw_skills if str(skill).strip()}
 
 
+def parse_json_list(raw_value, fallback=None) -> list:
+    fallback = fallback or []
+    if isinstance(raw_value, list):
+        return raw_value
+    try:
+        value = json.loads(raw_value or "[]")
+    except (TypeError, json.JSONDecodeError):
+        return fallback
+    return value if isinstance(value, list) else fallback
+
+
+def parse_salary_lpa(text: str) -> int:
+    lowered = (text or "").lower()
+    lpa_match = re.search(r"(\d{1,3})(?:\s*[-–]\s*(\d{1,3}))?\s*(?:lpa|lakhs?|lakh)", lowered)
+    if lpa_match:
+        return int(lpa_match.group(2) or lpa_match.group(1))
+    inr_match = re.search(r"₹\s*(\d{1,3})(?:\s*[-–]\s*(\d{1,3}))?", lowered)
+    if inr_match:
+        return int(inr_match.group(2) or inr_match.group(1))
+    usd_match = re.search(r"\$?\s*(\d{2,3})\s*k", lowered)
+    if usd_match:
+        return int(round(int(usd_match.group(1)) * 0.83))
+    return 0
+
+
+def company_package_floor(company_name: str) -> int:
+    premium = {name for name, _, _ in TOP_COMPANY_SEEDS[:80]}
+    return 18 if company_name in premium else 10
+
+
+def preference_matches_job(job_row: sqlite3.Row | dict, preferences: dict | None) -> bool:
+    if not preferences:
+        return True
+    selected_companies = set(preferences.get("company_names") or [])
+    if selected_companies and job_row["company"] not in selected_companies:
+        return False
+    min_salary = int(preferences.get("min_salary_lpa") or 0)
+    if min_salary:
+        offered = parse_salary_lpa(job_row["package_text"] or job_row["salary"] or "")
+        if offered and offered < min_salary:
+            return False
+        if not offered and company_package_floor(job_row["company"]) < min_salary:
+            return False
+    roles = [role.strip().lower() for role in (preferences.get("roles") or "").split(",") if role.strip()]
+    if roles and not any(role in (job_row["title"] or "").lower() for role in roles):
+        return False
+    locations = [loc.strip().lower() for loc in (preferences.get("locations") or "").split(",") if loc.strip()]
+    if locations and not any(loc in (job_row["location"] or "").lower() for loc in locations):
+        return False
+    return True
+
+
+def get_user_job_preferences(conn: sqlite3.Connection, user_id: str) -> dict:
+    row = conn.execute("SELECT * FROM user_job_preferences WHERE user_id=?", (user_id,)).fetchone()
+    if not row:
+        return {"company_ids": [], "company_names": [], "min_salary_lpa": 0, "roles": "", "locations": ""}
+    company_ids = [int(item) for item in parse_json_list(row["company_ids"]) if str(item).isdigit()]
+    names = []
+    if company_ids:
+        placeholders = ",".join("?" for _ in company_ids)
+        names = [
+            item["name"] for item in conn.execute(
+                f"SELECT name FROM company_watchlist WHERE id IN ({placeholders})",
+                company_ids,
+            ).fetchall()
+        ]
+    return {
+        "company_ids": company_ids,
+        "company_names": names,
+        "min_salary_lpa": int(row["min_salary_lpa"] or 0),
+        "roles": row["roles"] or "",
+        "locations": row["locations"] or "",
+    }
+
+
+class CareerLinkParser(HTMLParser):
+    def __init__(self):
+        super().__init__()
+        self.links = []
+        self._active_href = ""
+        self._active_text = []
+
+    def handle_starttag(self, tag, attrs):
+        if tag != "a":
+            return
+        attrs_map = dict(attrs)
+        self._active_href = attrs_map.get("href", "")
+        self._active_text = []
+
+    def handle_data(self, data):
+        if self._active_href:
+            self._active_text.append(data.strip())
+
+    def handle_endtag(self, tag):
+        if tag == "a" and self._active_href:
+            text = " ".join(part for part in self._active_text if part).strip()
+            self.links.append({"href": self._active_href, "text": text})
+            self._active_href = ""
+            self._active_text = []
+
+
+def fetch_career_links(source: sqlite3.Row, limit: int = 8) -> list[dict]:
+    req = urlrequest.Request(
+        source["careers_url"],
+        headers={"User-Agent": "FitScoreJobBot/1.0 (+https://github.com/ankit-kumar-developer-122/FitScore)"},
+    )
+    try:
+        with urlrequest.urlopen(req, timeout=8) as response:
+            html = response.read(750000).decode("utf-8", errors="ignore")
+    except Exception:
+        return []
+
+    parser = CareerLinkParser()
+    parser.feed(html)
+    found = []
+    seen = set()
+    for link in parser.links:
+        text = re.sub(r"\s+", " ", link["text"] or "").strip()
+        href = urljoin(source["careers_url"], link["href"])
+        haystack = f"{text} {href}".lower()
+        if not text or href in seen:
+            continue
+        if not any(keyword in haystack for keyword in JOB_TITLE_KEYWORDS):
+            continue
+        seen.add(href)
+        found.append({
+            "title": text[:120],
+            "company": source["name"],
+            "application_url": href,
+            "source_name": source["name"],
+            "source_url": source["careers_url"],
+        })
+        if len(found) >= limit:
+            break
+    return found
+
+
+def infer_skills_from_title(title: str) -> list[str]:
+    lowered = title.lower()
+    skills = []
+    mapping = {
+        "frontend": ["JavaScript", "React", "CSS"],
+        "backend": ["Python", "SQL", "API"],
+        "full": ["JavaScript", "Python", "SQL"],
+        "data": ["Python", "SQL", "Data"],
+        "machine learning": ["Python", "ML", "Data"],
+        "ml": ["Python", "ML"],
+        "devops": ["AWS", "Docker", "Kubernetes"],
+        "cloud": ["AWS", "Docker"],
+        "security": ["Security", "Cloud"],
+        "android": ["Kotlin", "Android"],
+        "ios": ["Swift", "iOS"],
+    }
+    for key, values in mapping.items():
+        if key in lowered:
+            skills.extend(values)
+    return sorted(set(skills or ["Python", "JavaScript", "SQL"]))
+
+
+def upsert_scraped_jobs(conn: sqlite3.Connection, jobs: list[dict]) -> dict:
+    inserted = 0
+    skipped = 0
+    inserted_job_ids = []
+    now = datetime.utcnow().isoformat()
+    for job in jobs:
+        prior = conn.execute("SELECT id FROM jobs WHERE application_url=?", (job["application_url"],)).fetchone()
+        if prior:
+            skipped += 1
+            continue
+        company = job["company"]
+        floor = company_package_floor(company)
+        package_text = f"{floor}+ LPA expected"
+        cursor = conn.execute(
+            """
+            INSERT INTO jobs (title,company,salary,match_pct,status,skills,experience,description,location,package_text,application_url,source_name,source_url,created_at)
+            VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?)
+            """,
+            (
+                job["title"],
+                company,
+                package_text,
+                80,
+                "active",
+                json.dumps(infer_skills_from_title(job["title"])),
+                "See posting",
+                f"Imported from {job['source_name']} careers/jobs source.",
+                "Remote / India / Global",
+                package_text,
+                job["application_url"],
+                job["source_name"],
+                job["source_url"],
+                now,
+            )
+        )
+        inserted += 1
+        inserted_job_ids.append(cursor.lastrowid)
+    return {"inserted": inserted, "skipped": skipped, "inserted_job_ids": inserted_job_ids}
+
+
 def get_user_match_profile(conn: sqlite3.Connection, user_row: sqlite3.Row) -> dict:
     stored_skills = normalize_skill_terms(user_row["skills"] or "[]")
     latest_resume = conn.execute(
@@ -606,6 +1003,11 @@ def notify_matches_for_job(conn: sqlite3.Connection, job_id: int, auto_email_onl
     skipped = 0
 
     for user_row in user_rows:
+        preferences = get_user_job_preferences(conn, user_row["id"])
+        if not preference_matches_job(job_row, preferences):
+            skipped += 1
+            continue
+
         prior = conn.execute(
             "SELECT 1 FROM notification_logs WHERE user_id=? AND job_id=? AND channel='n8n_email' AND status='sent'",
             (user_row["id"], job_id)
@@ -702,13 +1104,77 @@ async def toggle_email(user_id: str):
     conn.close()
     return {"auto_email": bool(new_val)}
 
+
+@app.get("/api/companies")
+async def get_companies():
+    conn = get_db()
+    rows = conn.execute(
+        "SELECT * FROM company_watchlist ORDER BY source_type, package_tier DESC, name"
+    ).fetchall()
+    conn.close()
+    return [dict(row) for row in rows]
+
+
+@app.get("/api/users/{user_id}/job-preferences")
+async def read_job_preferences(user_id: str):
+    conn = get_db()
+    preferences = get_user_job_preferences(conn, user_id)
+    conn.close()
+    return preferences
+
+
+@app.post("/api/users/{user_id}/job-preferences")
+async def save_job_preferences(
+    user_id: str,
+    company_ids: str = Form("[]"),
+    min_salary_lpa: int = Form(0),
+    roles: str = Form(""),
+    locations: str = Form(""),
+):
+    ids = [int(item) for item in parse_json_list(company_ids) if str(item).isdigit()]
+    conn = get_db()
+    if ids:
+        placeholders = ",".join("?" for _ in ids)
+        valid_ids = {
+            row["id"] for row in conn.execute(
+                f"SELECT id FROM company_watchlist WHERE id IN ({placeholders})",
+                ids,
+            ).fetchall()
+        }
+        ids = [item for item in ids if item in valid_ids]
+    conn.execute(
+        """
+        INSERT INTO user_job_preferences (user_id,company_ids,min_salary_lpa,roles,locations,updated_at)
+        VALUES (?,?,?,?,?,?)
+        ON CONFLICT(user_id) DO UPDATE SET
+            company_ids=excluded.company_ids,
+            min_salary_lpa=excluded.min_salary_lpa,
+            roles=excluded.roles,
+            locations=excluded.locations,
+            updated_at=excluded.updated_at
+        """,
+        (
+            user_id,
+            json.dumps(ids),
+            max(0, int(min_salary_lpa or 0)),
+            roles.strip(),
+            locations.strip(),
+            datetime.utcnow().isoformat(),
+        ),
+    )
+    conn.commit()
+    preferences = get_user_job_preferences(conn, user_id)
+    conn.close()
+    return preferences
+
 # ── Job Endpoints ────────────────────────────────────────────────────
 @app.get("/api/jobs")
-async def get_jobs():
+async def get_jobs(user_id: str = ""):
     conn = get_db()
-    rows = conn.execute("SELECT * FROM jobs ORDER BY match_pct DESC").fetchall()
+    preferences = get_user_job_preferences(conn, user_id) if user_id else None
+    rows = conn.execute("SELECT * FROM jobs ORDER BY created_at DESC, match_pct DESC").fetchall()
     conn.close()
-    return [dict(r) for r in rows]
+    return [dict(row) for row in rows if preference_matches_job(row, preferences)]
 
 @app.post("/api/jobs")
 async def create_job(request: Request, title: str = Form(...), company: str = Form(...), salary: str = Form(""), skills: str = Form("[]"), experience: str = Form(""), description: str = Form(""), location: str = Form(""), package_text: str = Form(""), application_url: str = Form("")):
@@ -724,6 +1190,45 @@ async def create_job(request: Request, title: str = Form(...), company: str = Fo
     conn.commit()
     conn.close()
     return {"ok": True, "job_id": job_id, "notifications": notification_result}
+
+
+@app.post("/api/jobs/refresh-careers")
+async def refresh_career_jobs(request: Request, company_ids: str = Form("[]"), max_sources: int = Form(25)):
+    user = get_request_user(request)
+    ids = [int(item) for item in parse_json_list(company_ids) if str(item).isdigit()]
+    conn = get_db()
+    if not ids and user["role"] == "candidate":
+        ids = get_user_job_preferences(conn, user["id"]).get("company_ids", [])
+    if ids:
+        placeholders = ",".join("?" for _ in ids[:max_sources])
+        sources = conn.execute(
+            f"SELECT * FROM company_watchlist WHERE id IN ({placeholders})",
+            ids[:max_sources],
+        ).fetchall()
+    else:
+        sources = conn.execute(
+            "SELECT * FROM company_watchlist ORDER BY source_type, package_tier DESC, name LIMIT ?",
+            (max(1, min(int(max_sources or 25), 50)),)
+        ).fetchall()
+
+    scraped = []
+    for source in sources:
+        scraped.extend(fetch_career_links(source, limit=5))
+
+    result = upsert_scraped_jobs(conn, scraped)
+    notification_results = [
+        notify_matches_for_job(conn, job_id)
+        for job_id in result.get("inserted_job_ids", [])
+    ]
+    conn.commit()
+    conn.close()
+    return {
+        "inserted": result["inserted"],
+        "skipped": result["skipped"],
+        "sources_checked": len(sources),
+        "jobs_found": len(scraped),
+        "notifications_sent": sum(item.get("notified_count", 0) for item in notification_results),
+    }
 
 # ── Resume Upload ────────────────────────────────────────────────────
 @app.post("/api/resumes/upload")
